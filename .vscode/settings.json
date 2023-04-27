@@ -1,13 +1,22 @@
 {
     "rust-analyzer.linkedProjects": [
         "./Cargo.toml",
+        "./blake2f-circuit/Cargo.toml",
+        "./blake2f-circuit/Cargo.toml",
+        "./blake2f-circuit/Cargo.toml",
+        "./blake2f-circuit/Cargo.toml",
         "./blake2f-circuit/Cargo.toml"
     ],
     "cSpell.words": [
         "bitvec",
+        "chatgpt",
+        "efgh",
+        "ijkl",
         "layouter",
         "Layouter",
         "lebs",
-        "lebsp"
+        "lebsp",
+        "Vectord",
+        "without_lookup"
     ]
 }

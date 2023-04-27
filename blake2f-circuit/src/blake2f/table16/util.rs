@@ -1,9 +1,15 @@
-//use halo2_proofs::circuit::Value;
 
-pub enum Value<T> {
-    Assigned(T),
-    Unassigned,
-}
+
+use group::ff::{Field, PrimeField};
+
+use halo2_proofs::{
+    circuit::{Chip, Layouter, Region, Value, AssignedCell},
+    pasta::pallas,
+    plonk::{Advice, Column, ConstraintSystem, Error, TableColumn, Any, Assigned},
+    poly::Rotation,
+};
+use std::convert::TryInto;
+use std::marker::PhantomData;
 
 pub const MASK_EVEN_32: u32 = 0x55555555;
 
@@ -13,7 +19,7 @@ pub const MASK_EVEN_32: u32 = 0x55555555;
 ///
 /// Panics if the expected length of the sequence `NUM_BITS` exceeds
 /// 64.
-pub fn i2lebsp<const NUM_BITS: usize>(int: u64) -> [bool; NUM_BITS] {
+pub fn i2lebsp<const NUM_BITS: usize>(int: u128) -> [bool; NUM_BITS] {
     /// Takes in an FnMut closure and returns a constant-length array with elements of
     /// type `Output`.
     fn gen_const_array<Output: Copy + Default, const LEN: usize>(
@@ -33,17 +39,17 @@ pub fn i2lebsp<const NUM_BITS: usize>(int: u64) -> [bool; NUM_BITS] {
         ret
     }
 
-    assert!(NUM_BITS <= 64);
+    assert!(NUM_BITS <= 128);
     gen_const_array(|mask: usize| (int & (1 << mask)) != 0)
 }
 
 /// Returns the integer representation of a little-endian bit-array.
 /// Panics if the number of bits exceeds 64.
-pub fn lebs2ip<const K: usize>(bits: &[bool; K]) -> u64 {
-    assert!(K <= 64);
+pub fn lebs2ip<const K: usize>(bits: &[bool; K]) -> u128 {
+    assert!(K <= 128);
     bits.iter()
         .enumerate()
-        .fold(0u64, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
+        .fold(0u128, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
 }
 
 /// Helper function that interleaves a little-endian bit-array with zeros

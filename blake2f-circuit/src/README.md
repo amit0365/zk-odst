@@ -77,21 +77,21 @@ Mix(V0, V4, V8,  V12, m[S0], m[S1])
 Function Mix
    Inputs:
         Va, Vb, Vc, Vd       four 8-byte word entries from the work vector V
-        x, y                two 8-byte word entries from padded message m
+        x, y                 two 8-byte word entries from padded message m
    Output:
         Va, Vb, Vc, Vd       the modified versions of Va, Vb, Vc, Vd
 
    Va ← Va + Vb + x          with input
-   Vd ← (Vd xor Va) rotateright 32
+   Vd ← (Vd xor Va1) rotate right 32
 
-   Vc ← Vc + Vd              no input
-   Vb ← (Vb xor Vc) rotateright 24
+   Vc ← Vc + Vd1              no input
+   Vb ← (Vb xor Vc) rotate right 24
 
    Va ← Va + Vb + y          with input
-   Vd ← (Vd xor Va) rotateright 16
+   Vd ← (Vd xor Va) rotate right 16
 
    Vc ← Vc + Vd              no input
-   Vb ← (Vb xor Vc) rotateright 63
+   Vb ← (Vb xor Vc) rotate right 63
 
    Result ← Va, Vb, Vc, Vd
 End Function Mix
@@ -137,4 +137,35 @@ within the corresponding range. This makes it unnecessary to have a separate tab
 
 
 
+// each chunk is correctly range-checked
 
+
+
+// final gate call in subregion
+// compression util - assign row values and copy constraints, calculates R0 even and odd
+// compression - creates gate and assign columns a3, a4, a5
+// compression_gate - define gate operations
+// compression_util has decompose E into efgh 
+// subregion_initial has decompose A, B, C and assigns D and H
+
+
+// R0 even and odd are used for sigma gates
+// P, Q are used for ch gates
+// M is used for majority gate
+
+// for some reason assign outputs for sigma is defined in table16
+// while the assign outputs of other gates are in compression_util
+// which uses assign spread outputs from table16
+
+// test in table16
+
+// how the already known spread values are called/used?
+
+// are these used for every lookup in a gate? we already have some lookup values
+//   let a_0 = lookup.tag;
+//   let a_1 = lookup.dense;
+//   let a_2 = lookup.spread;
+//   a7 and a8 are used for word hi and lo values 
+//   we need four word values so total 8, in decompose_abcd
+
+// how decompose_efgh and decompose_e work?

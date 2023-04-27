@@ -1,290 +1,304 @@
-// implementation of blake2 hashing algorithm with halo2
-// this is a basic implementation with no optional features such as salting, personalized hashes, or tree hashing
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unreachable_code)]
+  //implementation of blake2 hashing algorithm with halo2
+  //this is a basic implementation with no optional features such as salting, personalized hashes, or tree hashing
+ #![allow(dead_code)]
+ #![allow(unused_variables)]
+ #![allow(unreachable_code)]
 
-use std::marker::PhantomData;
-use bitvec::prelude::*;
+ pub mod table16;
+ //pub mod xor;
 
-use pasta_curves::pallas::Base;
+ use group::ff::{Field, PrimeField};
+ use std::{cmp::min, marker::PhantomData};
+ use std::convert::TryInto;
+ use std::fmt;
 
-pub struct BlockWord(pub Option<u32>);
-
-use halo2_proofs::{
-    arithmetic::FieldExt,
-    circuit::{Layouter, Chip},
-    plonk::{Advice, Any, Column, ConstraintSystem, Error}, 
+ use halo2_proofs::{
+    circuit::{Chip, Layouter, Region, Value, AssignedCell},
+    pasta::pallas,
+    plonk::{Advice, Column, ConstraintSystem, Error, TableColumn, Any, Assigned},
+    poly::Rotation,
 };
 
 
-use crate::compression::*;
+ //pub struct BlockWord(pub Option<u32>);
+
+ pub use table16::{BlockWord, Table16Chip, Table16Config};
+
+use self::table16::compression::{State, CompressionConfig};
 
 
-// we use 12 rounds for BLAKE2
-const ROUNDS: usize = 12;
-//const STATE: usize = 8;
-const BLOCK_SIZE: usize = 16; //check?
-const DIGEST_SIZE: usize = 8; //check?
+//The [SHA-256] hash function.
+//
+// [SHA-256]: https://tools.ietf.org/html/rfc6234
 
+/// The size of a SHA-256 block, in 32-bit words.
+pub const BLOCK_SIZE: usize = 16;
+/// The size of a SHA-256 digest, in 32-bit words.
+const DIGEST_SIZE: usize = 8;
 
+/// The set of circuit instructions required to use the [`Blake2f`] gadget.
+pub trait Blake2fInstructions<F: Field>: Chip<F> {
+    /// Variable representing the SHA-256 internal state.
+    type State: Clone + fmt::Debug;
+    /// Variable representing a 32-bit word of the input block to the SHA-256 compression
+    /// function.
+    type BlockWord: Copy + fmt::Debug + Default;
 
-#[derive(Clone, Debug)]
-pub struct Blake2fTable {
-    id: Column<Advice>,
-}
+    /// Places the SHA-256 IV in the circuit, returning the initial state variable.
+    fn initialization_vector(&self, layouter: &mut impl Layouter<F>) -> Result<Self::State, Error>;
 
-impl Blake2fTable {
-    pub fn construct<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        Self {
-            id: meta.advice_column(),
-        }
-    }
-
-    pub fn columns(&self) -> Vec<Column<Any>> {
-        vec![self.id.into()]
-    }
-
-    pub fn annotations(&self) -> Vec<String> {
-        vec![String::from("id")]
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Blake2fConfig<F> {
-    table: Blake2fTable,
-    _marker: PhantomData<F>,
-    compression: CompressionConfig,
-}
-
-impl<F: FieldExt> Blake2fConfig<F> {
-    pub fn configure(meta: &mut ConstraintSystem<F>, table: Blake2fTable, compression: CompressionConfig) -> Self {
-        Self {
-            table,
-            _marker: PhantomData,
-            compression,
-        };
-    }
-
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct Blake2fWitness {
-    pub rounds: u32,
-    pub h: [u64; 8],
-    pub m: [u64; 16],
-    pub t: [u64; 2],
-    pub f: bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct Blake2fChip<F: FieldExt> {
-    config: Blake2fConfig<F>,
-    data: Vec<Blake2fWitness>,
-}
-
-impl<F: FieldExt> Blake2fChip<F> {
-    pub fn construct(config: Blake2fConfig<F>, data: Vec<Blake2fWitness>) -> Self {
-        Self { config, data }
-    }
-
-    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        Ok(())
-    }
-}
-pub trait Blake2fInstructions<F: FieldExt> {
-    type State;
-    type BlockWord;
-
-    fn initialization_vector(
-        &self,
-        layouter: &mut impl Layouter<Base>,
-    ) -> Result<Self::State, Error>;
-
+    /// Creates an initial state from the output state of a previous block
     fn initialization(
         &self,
-        layouter: &mut impl Layouter<Base>,
+        layouter: &mut impl Layouter<F>,
         init_state: &Self::State,
     ) -> Result<Self::State, Error>;
 
+    /// Starting from the given initialized state, processes a block of input and returns the
+    /// final state.
     fn compress(
         &self,
-        layouter: &mut impl Layouter<Base>,
+        layouter: &mut impl Layouter<F>,
         initialized_state: &Self::State,
         input: [Self::BlockWord; BLOCK_SIZE],
     ) -> Result<Self::State, Error>;
 
+    /// Converts the given state into a message digest.
     fn digest(
         &self,
-        layouter: &mut impl Layouter<Base>,
+        layouter: &mut impl Layouter<F>,
         state: &Self::State,
     ) -> Result<[Self::BlockWord; DIGEST_SIZE], Error>;
 }
 
+/// The output of a SHA-256 circuit invocation.
+#[derive(Debug)]
+pub struct Blake2fDigest<BlockWord>([BlockWord; DIGEST_SIZE]);
 
-// here we add the implementation of the BLAKE2 instructions for the BLAKE2 Chip
-impl<F: FieldExt> Blake2fInstructions<F> for Blake2fChip<F> {
-    type State = State;
-    type BlockWord = BlockWord;
+/// A gadget that constrains a SHA-256 invocation. It supports input at a granularity of
+/// 32 bits.
+#[derive(Debug)]
+pub struct Blake2f<F: Field, CS: Blake2fInstructions<F>> {
+    chip: CS,
+    state: CS::State,
+    cur_block: Vec<CS::BlockWord>,
+    length: usize,
+}
 
-    // Used during the first round when we initialize the block with IV
-    fn initialization_vector(
-        &self,
-        layouter: &mut impl Layouter<Base>,
-    ) -> Result<State, Error> {
-        // replace Ok(State) with call from compression.rs
-        let state = State::initial_state();
-        Ok(state)
+impl<F: Field, Blake2fChip: Blake2fInstructions<F>> Blake2f<F, Blake2fChip> {
+    /// Create a new hasher instance.
+    pub fn new(chip: Blake2fChip, mut layouter: impl Layouter<F>) -> Result<Self, Error> {
+        let state = chip.initialization_vector(&mut layouter)?;
+        Ok(Blake2f {
+            chip,
+            state,
+            cur_block: Vec::with_capacity(BLOCK_SIZE),
+            length: 0,
+        })
     }
 
-    // Since the compression algorithm has multiple rounds, we can initialize a table with a previous state
-    fn initialization(
-        &self,
-        layouter: &mut impl Layouter<Base>,
-        init_state: &Self::State,
-    ) -> Result<State, Error>{
-        // change put just for debugging and running benchmarking
-        let state = State::initial_state(); 
-        Ok(state)
+    /// Digest data, updating the internal state.
+    pub fn update(
+        &mut self,
+        mut layouter: impl Layouter<F>,
+        mut data: &[Blake2fChip::BlockWord],
+    ) -> Result<(), Error> {
+        self.length += data.len() * 32;
+
+        // Fill the current block, if possible.
+        let remaining = BLOCK_SIZE - self.cur_block.len();
+        let (l, r) = data.split_at(min(remaining, data.len()));
+        self.cur_block.extend_from_slice(l);
+        data = r;
+
+        // If we still don't have a full block, we are done.
+        if self.cur_block.len() < BLOCK_SIZE {
+            return Ok(());
+        }
+
+        // Process the now-full current block.
+        self.state = self.chip.compress(
+            &mut layouter,
+            &self.state,
+            self.cur_block[..]
+                .try_into()
+                .expect("cur_block.len() == BLOCK_SIZE"),
+        )?;
+        self.cur_block.clear();
+
+        // Process any additional full blocks.
+        let mut chunks_iter = data.chunks_exact(BLOCK_SIZE);
+        for chunk in &mut chunks_iter {
+            self.state = self.chip.initialization(&mut layouter, &self.state)?;
+            self.state = self.chip.compress(
+                &mut layouter,
+                &self.state,
+                chunk.try_into().expect("chunk.len() == BLOCK_SIZE"),
+            )?;
+        }
+
+        // Cache the remaining partial block, if any.
+        let rem = chunks_iter.remainder();
+        self.cur_block.extend_from_slice(rem);
+
+        Ok(())
     }
 
-    // Given an initialized state and an input message block, compress the
-    // message block and return the final state.
-    fn compress(
-        &self,
-        layouter: &mut impl Layouter<Base>,
-        initialized_state: &Self::State,
-        input: [Self::BlockWord; BLOCK_SIZE],
-    ) -> Result<Self::State, Error> {
-        // change put just for debugging and running benchmarking
-        let state = State::initial_state();
-        Ok(state)
+    /// Retrieve result and consume hasher instance.
+    pub fn finalize(
+        mut self,
+        mut layouter: impl Layouter<F>,
+    ) -> Result<Blake2fDigest<Blake2fChip::BlockWord>, Error> {
+        // Pad the remaining block
+        if !self.cur_block.is_empty() {
+            let padding = vec![Blake2fChip::BlockWord::default(); BLOCK_SIZE - self.cur_block.len()];
+            self.cur_block.extend_from_slice(&padding);
+            self.state = self.chip.initialization(&mut layouter, &self.state)?;
+            self.state = self.chip.compress(
+                &mut layouter,
+                &self.state,
+                self.cur_block[..]
+                    .try_into()
+                    .expect("cur_block.len() == BLOCK_SIZE"),
+            )?;
+        }
+        self.chip
+            .digest(&mut layouter, &self.state)
+            .map(Blake2fDigest)
     }
 
-    fn digest(
-        &self,
-        layouter: &mut impl Layouter<Base>,
-        state: &Self::State,
-    ) -> Result<[Self::BlockWord; DIGEST_SIZE], Error> {
-        Ok(BlockWord)
+    /// Convenience function to compute hash of the data. It will handle hasher creation,
+    /// data feeding and finalization.
+    pub fn digest(
+        chip: Blake2fChip,
+        mut layouter: impl Layouter<F>,
+        data: &[Blake2fChip::BlockWord],
+    ) -> Result<Blake2fDigest<Blake2fChip::BlockWord>, Error> {
+        let mut hasher = Self::new(chip, layouter.namespace(|| "init"))?;
+        hasher.update(layouter.namespace(|| "update"), data)?;
+        hasher.finalize(layouter.namespace(|| "finalize"))
     }
 }
 
-#[cfg(any(feature = "test", test))]
-pub mod dev {
-    use super::*;
 
-    use ethers_core::{types::H512, utils::hex::FromHex};
-    use halo2_proofs::{arithmetic::FieldExt, circuit::SimpleFloorPlanner, plonk::Circuit};
-    use std::{marker::PhantomData, str::FromStr};
+//  #[cfg(any(feature = "test", test))]
+//  pub mod dev {
+//      use super::*;
 
-    lazy_static::lazy_static! {
-        // https://eips.ethereum.org/EIPS/eip-152#example-usage-in-solidity
-        pub static ref INPUTS_OUTPUTS: (Vec<Blake2fWitness>, Vec<H512>) = {
-            let (h1, h2) = (
-                <[u8; 32]>::from_hex("48c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5").expect(""),
-                <[u8; 32]>::from_hex("d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e1319cde05b").expect(""),
-            );
-            let (m1, m2, m3, m4) = (
-                <[u8; 32]>::from_hex("6162630000000000000000000000000000000000000000000000000000000000").expect(""),
-                <[u8; 32]>::from_hex("0000000000000000000000000000000000000000000000000000000000000000").expect(""),
-                <[u8; 32]>::from_hex("0000000000000000000000000000000000000000000000000000000000000000").expect(""),
-                <[u8; 32]>::from_hex("0000000000000000000000000000000000000000000000000000000000000000").expect(""),
-            );
-            (
-                vec![
-                    Blake2fWitness {
-                        rounds: 12,
-                        h: [
-                            u64::from_le_bytes(h1[0x00..0x08].try_into().expect("")),
-                            u64::from_le_bytes(h1[0x08..0x10].try_into().expect("")),
-                            u64::from_le_bytes(h1[0x10..0x18].try_into().expect("")),
-                            u64::from_le_bytes(h1[0x18..0x20].try_into().expect("")),
-                            u64::from_le_bytes(h2[0x00..0x08].try_into().expect("")),
-                            u64::from_le_bytes(h2[0x08..0x10].try_into().expect("")),
-                            u64::from_le_bytes(h2[0x10..0x18].try_into().expect("")),
-                            u64::from_le_bytes(h2[0x18..0x20].try_into().expect("")),
-                        ],
-                        m: [
-                            u64::from_le_bytes(m1[0x00..0x08].try_into().expect("")),
-                            u64::from_le_bytes(m1[0x08..0x10].try_into().expect("")),
-                            u64::from_le_bytes(m1[0x10..0x18].try_into().expect("")),
-                            u64::from_le_bytes(m1[0x18..0x20].try_into().expect("")),
-                            u64::from_le_bytes(m2[0x00..0x08].try_into().expect("")),
-                            u64::from_le_bytes(m2[0x08..0x10].try_into().expect("")),
-                            u64::from_le_bytes(m2[0x10..0x18].try_into().expect("")),
-                            u64::from_le_bytes(m2[0x18..0x20].try_into().expect("")),
-                            u64::from_le_bytes(m3[0x00..0x08].try_into().expect("")),
-                            u64::from_le_bytes(m3[0x08..0x10].try_into().expect("")),
-                            u64::from_le_bytes(m3[0x10..0x18].try_into().expect("")),
-                            u64::from_le_bytes(m3[0x18..0x20].try_into().expect("")),
-                            u64::from_le_bytes(m4[0x00..0x08].try_into().expect("")),
-                            u64::from_le_bytes(m4[0x08..0x10].try_into().expect("")),
-                            u64::from_le_bytes(m4[0x10..0x18].try_into().expect("")),
-                            u64::from_le_bytes(m4[0x18..0x20].try_into().expect("")),
-                        ],
-                        t: [3, 0],
-                        f: true,
-                    }
-                ],
-                vec![
-                    H512::from_str("ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923")
-                    .expect("BLAKE2F compression function output is 64-bytes")
-                ],
-            )
-        };
-    }
+//      use ethers_core::{types::H512, utils::hex::FromHex};
+//      use halo2_proofs::{circuit::SimpleFloorPlanner, plonk::Circuit};
+//      //use pasta_curves::arithmetic::Field;
+//      use std::{marker::PhantomData, str::FromStr};
 
-    #[derive(Default)]
-    pub struct Blake2fTestCircuit<F> {
-        pub inputs: Vec<Blake2fWitness>,
-        pub outputs: Vec<H512>,
-        pub _marker: PhantomData<F>,
-    }
+//      lazy_static::lazy_static! {
+//           //https:eips.ethereum.org/EIPS/eip-152#example-usage-in-solidity
+//          pub static ref INPUTS_OUTPUTS: (Vec<Blake2fWitness>, Vec<H512>) = {
+//              let (h1, h2) = (
+//                  <[u8; 32]>::from_hex("48c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5").expect(""),
+//                  <[u8; 32]>::from_hex("d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e1319cde05b").expect(""),
+//              );
+//              let (m1, m2, m3, m4) = (
+//                  <[u8; 32]>::from_hex("6162630000000000000000000000000000000000000000000000000000000000").expect(""),
+//                  <[u8; 32]>::from_hex("0000000000000000000000000000000000000000000000000000000000000000").expect(""),
+//                  <[u8; 32]>::from_hex("0000000000000000000000000000000000000000000000000000000000000000").expect(""),
+//                  <[u8; 32]>::from_hex("0000000000000000000000000000000000000000000000000000000000000000").expect(""),
+//              );
+//              (
+//                  vec![
+//                      Blake2fWitness {
+//                          rounds: 12,
+//                          h: [
+//                              u64::from_le_bytes(h1[0x00..0x08].try_into().expect("")),
+//                              u64::from_le_bytes(h1[0x08..0x10].try_into().expect("")),
+//                              u64::from_le_bytes(h1[0x10..0x18].try_into().expect("")),
+//                              u64::from_le_bytes(h1[0x18..0x20].try_into().expect("")),
+//                              u64::from_le_bytes(h2[0x00..0x08].try_into().expect("")),
+//                              u64::from_le_bytes(h2[0x08..0x10].try_into().expect("")),
+//                              u64::from_le_bytes(h2[0x10..0x18].try_into().expect("")),
+//                              u64::from_le_bytes(h2[0x18..0x20].try_into().expect("")),
+//                          ],
+//                          m: [
+//                              u64::from_le_bytes(m1[0x00..0x08].try_into().expect("")),
+//                              u64::from_le_bytes(m1[0x08..0x10].try_into().expect("")),
+//                              u64::from_le_bytes(m1[0x10..0x18].try_into().expect("")),
+//                              u64::from_le_bytes(m1[0x18..0x20].try_into().expect("")),
+//                              u64::from_le_bytes(m2[0x00..0x08].try_into().expect("")),
+//                              u64::from_le_bytes(m2[0x08..0x10].try_into().expect("")),
+//                              u64::from_le_bytes(m2[0x10..0x18].try_into().expect("")),
+//                              u64::from_le_bytes(m2[0x18..0x20].try_into().expect("")),
+//                              u64::from_le_bytes(m3[0x00..0x08].try_into().expect("")),
+//                              u64::from_le_bytes(m3[0x08..0x10].try_into().expect("")),
+//                              u64::from_le_bytes(m3[0x10..0x18].try_into().expect("")),
+//                              u64::from_le_bytes(m3[0x18..0x20].try_into().expect("")),
+//                              u64::from_le_bytes(m4[0x00..0x08].try_into().expect("")),
+//                              u64::from_le_bytes(m4[0x08..0x10].try_into().expect("")),
+//                              u64::from_le_bytes(m4[0x10..0x18].try_into().expect("")),
+//                              u64::from_le_bytes(m4[0x18..0x20].try_into().expect("")),
+//                          ],
+//                          t: [3, 0],
+//                          f: true,
+//                      }
+//                  ],
+//                  vec![
+//                      H512::from_str("ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923")
+//                      .expect("BLAKE2F compression function output is 64-bytes")
+//                  ],
+//              )
+//          };
+//      }
 
-    impl<F: FieldExt> Circuit<F> for Blake2fTestCircuit<F> {
-        type Config = Blake2fConfig<F>;
-        type FloorPlanner = SimpleFloorPlanner;
+//      #[derive(Default)]
+//      pub struct Blake2fTestCircuit<F> {
+//          pub inputs: Vec<Blake2fWitness>,
+//          pub outputs: Vec<usize>,// H512
+//          pub _marker: PhantomData<F>,
+//      }
 
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
+//      impl<F: Field> Circuit<F> for Blake2fTestCircuit<F> {
+//          type Config = Blake2fConfig<F>;
+//          type FloorPlanner = SimpleFloorPlanner;
 
-        fn configure(meta: &mut halo2_proofs::plonk::ConstraintSystem<F>) -> Self::Config {
-            let blake2f_table = Blake2fTable::construct(meta);
-            Blake2fConfig::configure(meta, blake2f_table)
-        }
+//          fn without_witnesses(&self) -> Self {
+//              Self::default()
+//          }
 
-        fn synthesize(
-            &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<F>,
-        ) -> Result<(), Error> {
-            let chip = Blake2fChip::construct(config, self.inputs.clone());
-            chip.load(&mut layouter)
-        }
-    }
-}
+//          fn configure(meta: &mut halo2_proofs::plonk::ConstraintSystem<F>) -> Self::Config {
+//              let blake2f_table = Blake2fTable::construct(&mut meta);
+//              Blake2fConfig::configure(meta, blake2f_table)
+//          }
 
-#[cfg(test)]
-mod tests {
-    use halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
-    use std::marker::PhantomData;
+//          fn synthesize(
+//              &self,
+//              config: Self::Config,
+//              mut layouter: impl Layouter<F>,
+//          ) -> Result<(), Error> {
+//              let chip = Blake2fChip::construct(config, self.inputs.clone());
+//              chip.load(&mut layouter)
+//          }
+//      }
+//  }
 
-    use super::dev::{Blake2fTestCircuit, INPUTS_OUTPUTS};
+//  #[cfg(test)]
+//  mod tests {
+//      use halo2curves::bn256::Fr;
+//      use halo2_proofs::{dev::MockProver};
+//      use std::marker::PhantomData;
 
-    #[test]
-    fn test_blake2f_circuit() {
-        let (inputs, outputs) = INPUTS_OUTPUTS.clone();
+//      use super::dev::{Blake2fTestCircuit, INPUTS_OUTPUTS};
 
-        let circuit: Blake2fTestCircuit<Fr> = Blake2fTestCircuit {
-            inputs,
-            outputs,
-            _marker: PhantomData,
-        };
+//      #[test]
+//      fn test_blake2f_circuit() {
+//          let (inputs, outputs) = INPUTS_OUTPUTS.clone();
 
-        let k = 8;
-        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-        assert_eq!(prover.verify(), Ok(()));
-    }
-}
+//          let circuit: Blake2fTestCircuit<Fr> = Blake2fTestCircuit {
+//              inputs,
+//              outputs,
+//              _marker: PhantomData,
+//             H512: todo!(),
+//          };
+
+//          let k = 8;
+//          let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+//          assert_eq!(prover.verify(), Ok(()));
+//      }
+//  }
