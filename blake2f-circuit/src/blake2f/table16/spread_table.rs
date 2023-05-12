@@ -13,193 +13,189 @@ use halo2_proofs::{
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
-use super::{util::{spread_bits, lebs2ip, i2lebsp}, compression::RoundWordSpread, AssignedBits};
+use super::{util::{spread_bits, lebs2ip, i2lebsp}}; // compression::RoundWordSpread
 
 use super::{util::*};
 
-/// Little-endian bits (up to 64 bits)
-/// 
-/* 
-pub struct Bits<const LEN: usize>([bool; LEN]);
-
-impl<const LEN: usize> Bits<LEN> {
-    fn spread<const SPREAD: usize>(&self) -> [bool; SPREAD] {
-        spread_bits(self.0)
-    }
-}
-
-impl<const LEN: usize> std::ops::Deref for Bits<LEN> {
-    type Target = [bool; LEN];
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<const LEN: usize> From<[bool; LEN]> for Bits<LEN> {
-    fn from(bits: [bool; LEN]) -> Self {
-        Self(bits)
-    }
-}
-
-impl<const LEN: usize> From<&Bits<LEN>> for [bool; LEN] {
-    fn from(bits: &Bits<LEN>) -> Self {
-        bits.0
-    }
-}
-
-impl<const LEN: usize> From<&Bits<LEN>> for Assigned<pallas::Base> {
-    fn from(bits: &Bits<LEN>) -> Assigned<pallas::Base> {
-        assert!(LEN <= 64);
-        pallas::Base::from(lebs2ip(&bits.0)).into()
-    }
-}
-
-impl From<&Bits<16>> for u16 {
-    fn from(bits: &Bits<16>) -> u16 {
-        lebs2ip(&bits.0) as u16
-    }
-}
-
-impl From<u16> for Bits<16> {
-    fn from(int: u16) -> Bits<16> {
-        Bits(i2lebsp::<16>(int.into()))
-    }
-}
-
-impl From<&Bits<32>> for u32 {
-    fn from(bits: &Bits<32>) -> u32 {
-        lebs2ip(&bits.0) as u32
-    }
-}
-
-impl From<u32> for Bits<32> {
-    fn from(int: u32) -> Bits<32> {
-        Bits(i2lebsp::<32>(int.into()))
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct AssignedBits<const LEN: usize>(AssignedCell<Bits<LEN>, pallas::Base>);
-
-impl<const LEN: usize> std::ops::Deref for AssignedBits<LEN> {
-    type Target = AssignedCell<Bits<LEN>, pallas::Base>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<const LEN: usize> AssignedBits<LEN> {
-    fn assign_bits<A, AR, T: TryInto<[bool; LEN]> + std::fmt::Debug + Clone>(
-        region: &mut Region<'_, pallas::Base>,
-        annotation: A,
-        column: impl Into<Column<Any>>,
-        offset: usize,
-        value: Value<T>,
-    ) -> Result<Self, Error>
-    where
-        A: Fn() -> AR,
-        AR: Into<String>,
-        <T as TryInto<[bool; LEN]>>::Error: std::fmt::Debug,
-    {
-        let value: Value<[bool; LEN]> = value.map(|v| v.try_into().unwrap());
-        let value: Value<Bits<LEN>> = value.map(|v| v.into());
-
-        let column: Column<Any> = column.into();
-        match column.column_type() {
-            Any::Advice => {
-                region.assign_advice(annotation, column.try_into().unwrap(), offset, || {
-                    value.clone()
-                })
-            }
-            Any::Fixed => {
-                region.assign_fixed(annotation, column.try_into().unwrap(), offset, || {
-                    value.clone()
-                })
-            }
-            _ => panic!("Cannot assign to instance column"),
-        }
-        .map(AssignedBits)
-    }
-}
-
-impl AssignedBits<16> {
-    fn value_u16(&self) -> Value<u16> {
-        self.value().map(|v| v.into())
-    }
-
-    fn assign<A, AR>(
-        region: &mut Region<'_, pallas::Base>,
-        annotation: A,
-        column: impl Into<Column<Any>>,
-        offset: usize,
-        value: Value<u16>,
-    ) -> Result<Self, Error>
-    where
-        A: Fn() -> AR,
-        AR: Into<String>,
-    {
-        let column: Column<Any> = column.into();
-        let value: Value<Bits<16>> = value.map(|v| v.into());
-        match column.column_type() {
-            Any::Advice => {
-                region.assign_advice(annotation, column.try_into().unwrap(), offset, || {
-                    value.clone()
-                })
-            }
-            Any::Fixed => {
-                region.assign_fixed(annotation, column.try_into().unwrap(), offset, || {
-                    value.clone()
-                })
-            }
-            _ => panic!("Cannot assign to instance column"),
-        }
-        .map(AssignedBits)
-    }
-}
-
-impl AssignedBits<32> {
-    fn value_u32(&self) -> Value<u32> {
-        self.value().map(|v| v.into())
-    }
-
-    fn assign<A, AR>(
-        region: &mut Region<'_, pallas::Base>,
-        annotation: A,
-        column: impl Into<Column<Any>>,
-        offset: usize,
-        value: Value<u32>,
-    ) -> Result<Self, Error>
-    where
-        A: Fn() -> AR,
-        AR: Into<String>,
-    {
-        let column: Column<Any> = column.into();
-        let value: Value<Bits<32>> = value.map(|v| v.into());
-        match column.column_type() {
-            Any::Advice => {
-                region.assign_advice(annotation, column.try_into().unwrap(), offset, || {
-                    value.clone()
-                })
-            }
-            Any::Fixed => {
-                region.assign_fixed(annotation, column.try_into().unwrap(), offset, || {
-                    value.clone()
-                })
-            }
-            _ => panic!("Cannot assign to instance column"),
-        }
-        .map(AssignedBits)
-    }
-}
-
-*/
-//use pasta_curves::pallas;
-
-
 const BITS_8: usize = 1 << 8;
 const BITS_15: usize = 1 << 15;
+
+#[derive(Clone, Debug)]
+ // Little-endian bits (up to 64 bits)
+ pub struct Bits<const LEN: usize>([bool; LEN]);
+
+ impl<const LEN: usize> Bits<LEN> {
+     fn spread<const SPREAD: usize>(&self) -> [bool; SPREAD] {
+         spread_bits(self.0)
+     }
+ }
+
+ impl<const LEN: usize> std::ops::Deref for Bits<LEN> {
+     type Target = [bool; LEN];
+
+     fn deref(&self) -> &Self::Target {
+         &self.0
+     }
+ }
+
+ impl<const LEN: usize> From<[bool; LEN]> for Bits<LEN> {
+     fn from(bits: [bool; LEN]) -> Self {
+         Self(bits)
+     }
+ }
+
+ impl<const LEN: usize> From<&Bits<LEN>> for [bool; LEN] {
+     fn from(bits: &Bits<LEN>) -> Self {
+         bits.0
+     }
+ }
+
+ impl<const LEN: usize> From<&Bits<LEN>> for Assigned<pallas::Base> {
+     fn from(bits: &Bits<LEN>) -> Assigned<pallas::Base> {
+         assert!(LEN <= 64);
+         pallas::Base::from(lebs2ip(&bits.0)).into()
+     }
+ }
+
+ impl From<&Bits<16>> for u16 {
+     fn from(bits: &Bits<16>) -> u16 {
+         lebs2ip(&bits.0) as u16
+     }
+ }
+
+ impl From<u16> for Bits<16> {
+     fn from(int: u16) -> Bits<16> {
+         Bits(i2lebsp::<16>(int.into()))
+     }
+ }
+
+ impl From<&Bits<32>> for u32 {
+     fn from(bits: &Bits<32>) -> u32 {
+         lebs2ip(&bits.0) as u32
+     }
+ }
+
+ impl From<u32> for Bits<32> {
+     fn from(int: u32) -> Bits<32> {
+         Bits(i2lebsp::<32>(int.into()))
+     }
+ }
+
+ #[derive(Clone, Debug)]
+ pub struct AssignedBits<const LEN: usize>(AssignedCell<Bits<LEN>, pallas::Base>);
+
+ impl<const LEN: usize> std::ops::Deref for AssignedBits<LEN> {
+     type Target = AssignedCell<Bits<LEN>, pallas::Base>;
+
+     fn deref(&self) -> &Self::Target {
+         &self.0
+     }
+ }
+
+ impl<const LEN: usize> AssignedBits<LEN> {
+     pub fn assign_bits<A, AR, T: TryInto<[bool; LEN]> + std::fmt::Debug + Clone>(
+         region: &mut Region<'_, pallas::Base>,
+         annotation: A,
+         column: impl Into<Column<Any>>,
+         offset: usize,
+         value: Value<T>,
+     ) -> Result<Self, Error>
+     where
+         A: Fn() -> AR,
+         AR: Into<String>,
+         <T as TryInto<[bool; LEN]>>::Error: std::fmt::Debug,
+     {
+         let value: Value<[bool; LEN]> = value.map(|v| v.try_into().unwrap());
+         let value: Value<Bits<LEN>> = value.map(|v| v.into());
+
+         let column: Column<Any> = column.into();
+         match column.column_type() {
+             Any::Advice => {
+                 region.assign_advice(annotation, column.try_into().unwrap(), offset, || {
+                     value.clone()
+                 })
+             }
+             Any::Fixed => {
+                 region.assign_fixed(annotation, column.try_into().unwrap(), offset, || {
+                     value.clone()
+                 })
+             }
+             _ => panic!("Cannot assign to instance column"),
+         }
+         .map(AssignedBits)
+     }
+ }
+
+ impl AssignedBits<16> {
+     fn value_u16(&self) -> Value<u16> {
+         self.value().map(|v| v.into())
+     }
+
+     fn assign<A, AR>(
+         region: &mut Region<'_, pallas::Base>,
+         annotation: A,
+         column: impl Into<Column<Any>>,
+         offset: usize,
+         value: Value<u16>,
+     ) -> Result<Self, Error>
+     where
+         A: Fn() -> AR,
+         AR: Into<String>,
+     {
+         let column: Column<Any> = column.into();
+         let value: Value<Bits<16>> = value.map(|v| v.into());
+         match column.column_type() {
+             Any::Advice => {
+                 region.assign_advice(annotation, column.try_into().unwrap(), offset, || {
+                     value.clone()
+                 })
+             }
+             Any::Fixed => {
+                 region.assign_fixed(annotation, column.try_into().unwrap(), offset, || {
+                     value.clone()
+                 })
+             }
+             _ => panic!("Cannot assign to instance column"),
+         }
+         .map(AssignedBits)
+     }
+ }
+
+ impl AssignedBits<32> {
+     fn value_u32(&self) -> Value<u32> {
+         self.value().map(|v| v.into())
+     }
+
+     fn assign<A, AR>(
+         region: &mut Region<'_, pallas::Base>,
+         annotation: A,
+         column: impl Into<Column<Any>>,
+         offset: usize,
+         value: Value<u32>,
+     ) -> Result<Self, Error>
+     where
+         A: Fn() -> AR,
+         AR: Into<String>,
+     {
+         let column: Column<Any> = column.into();
+         let value: Value<Bits<32>> = value.map(|v| v.into());
+         match column.column_type() {
+             Any::Advice => {
+                 region.assign_advice(annotation, column.try_into().unwrap(), offset, || {
+                     value.clone()
+                 })
+             }
+             Any::Fixed => {
+                 region.assign_fixed(annotation, column.try_into().unwrap(), offset, || {
+                     value.clone()
+                 })
+             }
+             _ => panic!("Cannot assign to instance column"),
+         }
+         .map(AssignedBits)
+     }
+ }
+
 
 /// An input word into a lookup, containing (tag, dense, spread)
 #[derive(Copy, Clone, Debug)]
@@ -604,7 +600,7 @@ impl SpreadTableConfig {
 mod tests {
     //use crate::{ spread_table::{SpreadTableConfig, SpreadTableChip, SpreadInputs, SpreadWord, SpreadVar}};
 
-    //use super::{get_tag, SpreadTableChip, SpreadTableConfig};
+    // use super::{get_tag, SpreadTableChip, SpreadTableConfig};
     //use ethers_core::rand::{self, rng};
     //use pasta_curves::Fp;
     use rand::Rng;
@@ -617,7 +613,7 @@ mod tests {
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
     };
 
-    use crate::blake2f::table16::{spread_table::{SpreadTableConfig, SpreadTableChip}, util::even_bits};
+    use crate::blake2f::table16::{spread_table::{SpreadTableConfig, get_tag, SpreadTableChip}, util::even_bits};
 
     #[test]
     fn lookup_table() {
@@ -683,70 +679,42 @@ mod tests {
                         // Test the first few small values.
                         add_row(F::ZERO, F::from(0b000), F::from(0b000000));
                         add_row(F::ZERO, F::from(0b001), F::from(0b000001))?;
-                        // add_row(F::ZERO, F::from(0b010), F::from(0b000100))?;
-                        // add_row(F::ZERO, F::from(0b011), F::from(0b000101))?;
-                        // add_row(F::ZERO, F::from(0b100), F::from(0b010000))?;
-                        // add_row(F::ZERO, F::from(0b101), F::from(0b010001))?;
+                        add_row(F::ZERO, F::from(0b010), F::from(0b000100))?;
+                        add_row(F::ZERO, F::from(0b011), F::from(0b000101))?;
+                        add_row(F::ZERO, F::from(0b100), F::from(0b010000))?;
+                        add_row(F::ZERO, F::from(0b101), F::from(0b010001))?;
 
-                        /* 
-                        let left_cell = left_cell_advice.copy_advice(
-                            || "copy left",
-                            &mut gate,
-                            config.input.spread,
-                            1,
+                        //Test the tag boundaries:
+                        //8-bit
+                        add_row(F::ZERO, F::from(0b11111111), F::from(0b0101010101010101))?;
+                        add_row(F::ONE, F::from(0b100000000), F::from(0b010000000000000000))?;
+                        // - 15-bit
+                        add_row(
+                            F::ONE,
+                            F::from(0b111111111111111),
+                            F::from(0b010101010101010101010101010101),
                         )?;
 
-                        let right_cell = right_cell_advice.copy_advice(
-                            || "copy left",
-                            &mut gate,
-                            config.input.spread,
-                            2,
-                        )?;
-                        
-                        let xor_result = left_cell
-                        .value()
-                        .zip(right_cell.value()).map(even_bits)
-                        .map(|v| F::from_u128(v));
+                        // Test random lookup values
+                        let mut rng = rand::thread_rng();
 
-                        assert!(xor_result,001);
+                        fn interleave_u16_with_zeros(word: u16) -> u32 {
+                            let mut word: u32 = word.into();
+                            word = (word ^ (word << 8)) & 0x00ff00ff;
+                            word = (word ^ (word << 4)) & 0x0f0f0f0f;
+                            word = (word ^ (word << 2)) & 0x33333333;
+                            word = (word ^ (word << 1)) & 0x55555555;
+                            word
+                        }
 
-                        */
-
-                        // //Test the tag boundaries:
-                        // //8-bit
-                        // add_row(F::ZERO, F::from(0b11111111), F::from(0b0101010101010101))?;
-                        // add_row(F::ONE, F::from(0b100000000), F::from(0b010000000000000000))?;
-                        // // - 15-bit
-                        // add_row(
-                        //     F::ONE,
-                        //     F::from(0b111111111111111),
-                        //     F::from(0b010101010101010101010101010101),
-                        // )?;
-
-                        // // Test random lookup values
-                        // let mut rng = rand::thread_rng();
-
-                        // fn interleave_u16_with_zeros(word: u16) -> u32 {
-                        //     let mut word: u32 = word.into();
-                        //     word = (word ^ (word << 8)) & 0x00ff00ff;
-                        //     word = (word ^ (word << 4)) & 0x0f0f0f0f;
-                        //     word = (word ^ (word << 2)) & 0x33333333;
-                        //     word = (word ^ (word << 1)) & 0x55555555;
-                        //     word
-                        // }
-
-                        // for _ in 0..10 {
-                        //     let word: u16 = rng.gen();
-                        //     add_row(
-                        //         F::from(u64::from(get_tag(word))),
-                        //         F::from(u64::from(word)),
-                        //         F::from(u64::from(interleave_u16_with_zeros(word))),
-                        //     )?;
-                        // }
-
-                        // let input1 = add_row(F::ZERO, F::from(0b000), F::from(0b000000))?;
-                        // let input2 = add_row(F::ZERO, F::from(0b001), F::from(0b000001))?;
-                        // //let xor = input1.spread.collect::<Vec<_>>(); + input2;                        
+                        for _ in 0..10 {
+                            let word: u16 = rng.gen();
+                            add_row(
+                                F::from(u64::from(get_tag(word))),
+                                F::from(u64::from(word)),
+                                F::from(u64::from(interleave_u16_with_zeros(word))),
+                            )?;
+                        }                      
 
                         Ok(())
                     },

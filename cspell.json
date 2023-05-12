@@ -3,7 +3,23 @@
     "ignorePaths": [],
     "dictionaryDefinitions": [],
     "dictionaries": [],
-    "words": [],
+    "words": [
+        "cmid",
+        "impllemented",
+        "sbhi",
+        "sblo",
+        "schi",
+        "sclo",
+        "scmid",
+        "swel",
+        "swhi",
+        "swlo",
+        "swmo",
+        "taga",
+        "tagb",
+        "tagc",
+        "tagd"
+    ],
     "ignoreWords": [
         "stateword"
     ],

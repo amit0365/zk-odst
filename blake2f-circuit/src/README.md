@@ -38,12 +38,7 @@ Function Compress
 
    // Todo mixing circuit
 
-        |         | s1  |  s2 |  s3 |  s4 |  s5 |
-        | V0..7   |  1  |  0  |  0  |  0  |  0  |
-        | V8..15  |  0  |  1  |  0  |  0  |  0  |
-        | V12     |  0  |  0  |  1  |  0  |  0  |
-        | V13     |  0  |  0  |  0  |  1  |  0  |
-        | V14     |  0  |  0  |  0  |  0  |  1  |
+
 
    Twelve rounds of cryptographic message mixing
    for i from 0 to 11 do
@@ -60,6 +55,7 @@ Function Compress
       Mix(V1, V6, V11, V12, m[S10], m[S11])
       Mix(V2, V7, V8,  V13, m[S12], m[S13])
       Mix(V3, V4, V9,  V14, m[S14], m[S15])
+      
    end for
 
    Mix the upper and lower halves of V into ongoing state vector h
@@ -77,69 +73,32 @@ Mix(V0, V4, V8,  V12, m[S0], m[S1])
 Function Mix
    Inputs:
         Va, Vb, Vc, Vd       four 8-byte word entries from the work vector V
-        x, y                 two 8-byte word entries from padded message m
+        x, y                 two  8-byte word entries from padded message m
    Output:
         Va, Vb, Vc, Vd       the modified versions of Va, Vb, Vc, Vd
 
-   Va ← Va + Vb + x          with input
-   Vd ← (Vd xor Va1) rotate right 32
+   // decompose a,b,c,d in ABCDvar
+   Va1 ←  Va + Vb + x          with input
+   Vd1 ← (Vd xor Va1) rotate right 32
 
-   Vc ← Vc + Vd1              no input
-   Vb ← (Vb xor Vc) rotate right 24
+   Vc1 ← Vc + Vd1              no input
+   // decompose b and c1 in EFGHvar
+   Vb1 ← (Vb xor Vc1) rotate right 24
 
-   Va ← Va + Vb + y          with input
-   Vd ← (Vd xor Va) rotate right 16
+   // decompose a1,b1,c1,d1 in ABCDvar
+   Va2 ← Va1 + Vb1 + y          with input
+   Vd2 ← (Vd1 xor Va2) rotate right 16
 
-   Vc ← Vc + Vd              no input
-   Vb ← (Vb xor Vc) rotate right 63
+   Vc2 ← Vc1 + Vd2             no input
+   // decompose b1 and c2 in IJKLvar
+   Vb2 ← (Vb1 xor Vc2) rotate right 63
 
    Result ← Va, Vb, Vc, Vd
 End Function Mix
 
 
-// Todo lookup table or a universal spread table for xor?
-
-A spread table can be defined as a table that maps a 16-bit input value to an output value with its bits interleaved with zero bits. 
-This is often used in bit manipulation, parallel computing, or graphics processing to perform operations efficiently. 
-In this context, the spread table serves as a lookup table to efficiently interleave the bits of the input with zero bits.
-
-To create a spread table, you need to perform the following steps:
-
-Initialize an empty table with a size of 65536 (2^16) elements, as there are 2^16 possible combinations of 16-bit input values.
-Iterate through all possible 16-bit input values (0 to 65535).
-For each input value, calculate the output value by interleaving its bits with zero bits.
-Store the calculated output value in the corresponding position in the table.
-Here's an example of how you can create a spread table in Python:
-
-python
-Copy code
-def spread_table():
-    table = [0] * 65536
-
-    for i in range(65536):
-        output = 0
-        for j in range(16):
-            output |= (i >> j & 1) << (2 * j)
-        table[i] = output
-
-    return table
-
-spread_lookup = spread_table()
-
-In this example, the spread_table function initializes an empty table,
-iterates through all possible 16-bit input values, calculates the output values
-by interleaving their bits with zero bits, and stores them in the table.
-
-The spread table can also be used for range checks by examining the output value. 
-If the output value is within a certain range, it implies that the input value is also 
-within the corresponding range. This makes it unnecessary to have a separate table for range checks.
-
-
-
 
 // each chunk is correctly range-checked
-
-
 
 // final gate call in subregion
 // compression util - assign row values and copy constraints, calculates R0 even and odd
@@ -169,3 +128,5 @@ within the corresponding range. This makes it unnecessary to have a separate tab
 //   we need four word values so total 8, in decompose_abcd
 
 // how decompose_efgh and decompose_e work?
+
+// ask halo2 discord if word lo hi required in decompose abcd

@@ -1,5 +1,17 @@
-// todo why word lo, hi uses without lookup?
-// assign gates has a diff lookup structure which is used in the initial round than the create gates 
+// todo why word lo, hi uses without lookup? post on halo2 discord   
+
+// will the spread form handle carry? i think so. in that case keep the calc in spread
+// does the carry get added to the e_new value in the next round
+
+// find enable equality copy advice - in table16 add all advice columns to permutation - solved
+// The inputs we've been given could be located anywhere in the circuit,
+// but we can only rely on relative offsets inside this region. So we
+// assign new cells inside the region and constrain them to have the
+// same values as the inputs.
+
+// convert addition gates like anew, hprime - in enew how do we constrain dlo dhi
+// the final output of gates should be in dense 
+// while constraining dense forms by lookup, get spread of final outputs which will be used further 
 
 use super::{
     AbcdVar, CompressionConfig, EfghVar, RoundWord, RoundWordA, RoundWordDense, RoundWordE,
@@ -125,6 +137,8 @@ pub fn get_decompose_e_row(round_idx: RoundIdx) -> usize {
     get_round_row(round_idx)
 }
 
+// initial round just decomposes into chunks
+// assigns row for decomposing F in efgh chunks
 pub fn get_decompose_f_row(round_idx: InitialRound) -> usize {
     get_decompose_e_row(round_idx.into()) + DECOMPOSE_EFGH
 }
@@ -188,6 +202,7 @@ pub fn get_d_row(round_idx: RoundIdx) -> usize {
     }
 }
 
+// e_new requires h_prime too but i think after h_prime is assigned just copy advice
 pub fn get_e_new_row(round_idx: MainRoundIdx) -> usize {
     get_d_row(round_idx.into())
 }
@@ -220,7 +235,7 @@ impl CompressionConfig {
         let a = SpreadVar::with_lookup(
             region,
             &self.lookup,
-            row + 1,
+            row - 1,
             spread_pieces[0].clone().map(SpreadWord::try_new),
         )?;
         let b = SpreadVar::with_lookup(
@@ -238,7 +253,7 @@ impl CompressionConfig {
         let d = SpreadVar::with_lookup(
             region,
             &self.lookup,
-            row + 1,
+            row + 2,
             spread_pieces[3].clone().map(SpreadWord::try_new),
         )?;
 
@@ -256,6 +271,8 @@ impl CompressionConfig {
         row: usize,
         val: Value<u64>,
     ) -> Result<EfghVar, Error> {
+
+        // selector is just enforcing the conditional constraint for dense and spread check?
         self.s_decompose_efgh.enable(region, row)?;
 
         let spread_pieces = val.map(EfghVar::pieces);
@@ -264,7 +281,7 @@ impl CompressionConfig {
         let a = SpreadVar::with_lookup(
             region,
             &self.lookup,
-            row + 1,
+            row - 1,
             spread_pieces[0].clone().map(SpreadWord::try_new),
         )?;
         let b_lo = SpreadVar::with_lookup(
@@ -276,19 +293,19 @@ impl CompressionConfig {
         let b_hi = SpreadVar::with_lookup(
             region,
             &self.lookup,
-            row,
+            row+1,
             spread_pieces[2].clone().map(SpreadWord::try_new),
         )?;
         let c = SpreadVar::with_lookup(
             region,
             &self.lookup,
-            row + 1,
+            row + 2,
             spread_pieces[3].clone().map(SpreadWord::try_new),
         )?;
         let d = SpreadVar::with_lookup(
             region,
             &self.lookup,
-            row,
+            row+3,
             spread_pieces[4].clone().map(SpreadWord::try_new),
         )?;
 
@@ -312,31 +329,31 @@ impl CompressionConfig {
         let spread_pieces = val.map(IjklVar::pieces);
         let spread_pieces = spread_pieces.transpose_vec(6);
 
-        let a_lo = SpreadVar::with_lookup(
+        let a = SpreadVar::with_lookup(
             region,
             &self.lookup,
             row,
             spread_pieces[0].clone().map(SpreadWord::try_new),
         )?;
-        let a_hi = SpreadVar::with_lookup(
-            region,
-            &self.lookup,
-            row,
-            spread_pieces[1].clone().map(SpreadWord::try_new),
-        )?;
         let b = SpreadVar::with_lookup(
             region,
             &self.lookup,
             row + 1,
-            spread_pieces[2].clone().map(SpreadWord::try_new),
+            spread_pieces[1].clone().map(SpreadWord::try_new),
         )?;
         let c = SpreadVar::with_lookup(
             region,
             &self.lookup,
             row + 1,
+            spread_pieces[2].clone().map(SpreadWord::try_new),
+        )?;
+        let d_lo = SpreadVar::with_lookup(
+            region,
+            &self.lookup,
+            row,
             spread_pieces[3].clone().map(SpreadWord::try_new),
         )?;
-        let d = SpreadVar::with_lookup(
+        let d_hi = SpreadVar::with_lookup(
             region,
             &self.lookup,
             row,
@@ -344,11 +361,11 @@ impl CompressionConfig {
         )?;
 
         Ok(IjklVar {
-            a_lo,
-            a_hi,
+            a,
             b,
             c,
-            d,
+            d_lo,
+            d_hi,
         })
     }
 
@@ -379,103 +396,107 @@ impl CompressionConfig {
         Ok(RoundWordE::new(e_pieces, dense_halves, spread_halves))
     }
 
+
+// gates only take spread values
     pub(super) fn assign_a1(
         &self,
         region: &mut Region<'_, pallas::Base>,
         round_idx: MainRoundIdx,
-        word: AbcdVar,
-    ) -> Result<(AssignedBits<16>, AssignedBits<16>), Error> {
+        vector_a: &RoundWordDense,
+        vector_b: &RoundWordDense,
+        message_x: &RoundWordDense,
+    ) -> Result<RoundWordDense, Error> {
         // Rename these here for ease of matching the gates to the specification.
+        let a_1 = self.lookup.dense;
         let a_3 = self.extras[0];
         let a_4 = self.extras[1];
-        let a_5 = self.message_schedule;
+        let a_5 = self.extras[2];
+        let a_6 = self.extras[3];
 
-        let row = get_upper_sigma_0_row(round_idx);
+        let row = get_a1_row(round_idx);
 
-        self.s_spread_a1.enable(region, row)?;
+        self.s_vector_a1.enable(region, row)?;
 
-        // Assign `spread_a` and copy constraint
-        word.a
-            .spread
-            .copy_advice(|| "spread_a", region, a_3, row + 1)?;
-        // Assign `spread_b` and copy constraint
-        word.b.spread.copy_advice(|| "spread_b", region, a_5, row)?;
-        // Assign `spread_c_lo` and copy constraint
-        word.c_lo
-            .spread
-            .copy_advice(|| "spread_c_lo", region, a_3, row - 1)?;
-        // Assign `spread_c_mid` and copy constraint
-        word.c_mid
-            .spread
-            .copy_advice(|| "spread_c_mid", region, a_4, row - 1)?;
-        // Assign `spread_c_hi` and copy constraint
-        word.c_hi
-            .spread
-            .copy_advice(|| "spread_c_hi", region, a_4, row + 1)?;
-        // Assign `spread_d` and copy constraint
-        word.d.spread.copy_advice(|| "spread_d", region, a_4, row)?;
+        // Assign and copy a
+        vector_a.0.copy_advice(|| "vector_a_lo", region, a_3, row - 1 )?;
+        vector_a.1.copy_advice(|| "vector_a_mo", region, a_3, row)?;
+        vector_a.2.copy_advice(|| "vector_a_el", region, a_3, row + 1)?;
+        vector_a.3.copy_advice(|| "vector_a_hi", region, a_3, row + 2)?;
 
-        // Calculate R_0^{even}, R_0^{odd}, R_1^{even}, R_1^{odd}
-        let r = word.xor_upper_sigma();
-        let r_0: Value<[bool; 32]> = r.map(|r| r[..32].try_into().unwrap());
-        let r_0_even = r_0.map(even_bits);
-        let r_0_odd = r_0.map(odd_bits);
+        // Assign and copy d_lo, d_hi
+        vector_b.0.copy_advice(|| "vector_b_lo", region, a_4, row - 1)?;
+        vector_b.1.copy_advice(|| "vector_b_mo", region, a_4, row)?;
+        vector_b.2.copy_advice(|| "vector_b_el", region, a_4, row + 1)?;
+        vector_b.3.copy_advice(|| "vector_b_hi", region, a_4, row + 2)?;
 
-        let r_1: Value<[bool; 32]> = r.map(|r| r[32..].try_into().unwrap());
-        let r_1_even = r_1.map(even_bits);
-        let r_1_odd = r_1.map(odd_bits);
 
-        self.assign_sigma_outputs(
-            region,
-            &self.lookup,
+        // Assign and copy d_lo, d_hi
+        message_x.0.copy_advice(|| "message_x_lo", region, a_5, row - 1)?;
+        message_x.1.copy_advice(|| "message_x_mo", region, a_5, row)?;
+        message_x.2.copy_advice(|| "message_x_el", region, a_5, row + 1)?;
+        message_x.3.copy_advice(|| "message_x_hi", region, a_5, row + 2)?;
+
+        // Assign a1, a1_carry
+        let (vector_a1, vector_a1_carry) = sum_with_carry(vec![
+            (vector_a.0.value_u16(), vector_a.1.value_u16(),vector_a.2.value_u16(), vector_a.3.value_u16()),
+            (vector_b.0.value_u16(), vector_b.1.value_u16(),vector_b.2.value_u16(), vector_b.3.value_u16()),
+            (message_x.0.value_u16(), message_x.1.value_u16(),message_x.2.value_u16(), message_x.3.value_u16()),
+
+        ]);
+        
+        let vector_a1_dense = self.assign_word_halves_dense(region, row-1, a_1, 
+            row, a_1,row+1, a_1,row+2, a_1, vector_a1)?;
+
+        region.assign_advice(
+            || "vector_a1_carry",
             a_3,
-            row,
-            r_0_even,
-            r_0_odd,
-            r_1_even,
-            r_1_odd,
-        )
+            row - 1,
+            || vector_a1_carry.map(pallas::Base::from),
+        )?;
+
+        Ok(vector_a1_dense)
+
     }
 
-    pub(super) fn assign_upper_sigma_1(
+
+    pub(super) fn assign_d1(
         &self,
         region: &mut Region<'_, pallas::Base>,
         round_idx: MainRoundIdx,
-        word: EfghVar,
+        vector_a1: AbcdVar,
     ) -> Result<(AssignedBits<16>, AssignedBits<16>), Error> {
         // Rename these here for ease of matching the gates to the specification.
         let a_3 = self.extras[0];
         let a_4 = self.extras[1];
         let a_5 = self.message_schedule;
 
-        let row = get_upper_sigma_1_row(round_idx);
+        let row = get_vector_d1_row(round_idx);
 
-        self.s_upper_sigma_1.enable(region, row)?;
+        self.s_vector_d1.enable(region, row)?;
 
-        // Assign `spread_a_lo` and copy constraint
-        word.a_lo
+        // Assign `spread_a` and copy constraint
+        vector_a1.m
             .spread
-            .copy_advice(|| "spread_a_lo", region, a_3, row + 1)?;
-        // Assign `spread_a_hi` and copy constraint
-        word.a_hi
+            .copy_advice(|| "spread_a", region, a_4, row - 1)?;
+
+        // Assign `spread_b` and copy constraint
+        vector_a1.n
             .spread
-            .copy_advice(|| "spread_a_hi", region, a_4, row + 1)?;
-        // Assign `spread_b_lo` and copy constraint
-        word.b_lo
-            .spread
-            .copy_advice(|| "spread_b_lo", region, a_3, row - 1)?;
-        // Assign `spread_b_hi` and copy constraint
-        word.b_hi
-            .spread
-            .copy_advice(|| "spread_b_hi", region, a_4, row - 1)?;
+            .copy_advice(|| "spread_b", region, a_4, row)?;
+
         // Assign `spread_c` and copy constraint
-        word.c.spread.copy_advice(|| "spread_c", region, a_5, row)?;
+        vector_a1.o
+            .spread
+            .copy_advice(|| "spread_c", region, a_5, row + 1)?;
+
         // Assign `spread_d` and copy constraint
-        word.d.spread.copy_advice(|| "spread_d", region, a_4, row)?;
+        vector_a1.p
+            .spread
+            .copy_advice(|| "spread_d", region, a_4, row + 2)?;
 
         // Calculate R_0^{even}, R_0^{odd}, R_1^{even}, R_1^{odd}
         // Calculate R_0^{even}, R_0^{odd}, R_1^{even}, R_1^{odd}
-        let r = word.xor_upper_sigma();
+        let r = vector_a1.xor_upper_sigma();
         let r_0: Value<[bool; 32]> = r.map(|r| r[..32].try_into().unwrap());
         let r_0_even = r_0.map(even_bits);
         let r_0_odd = r_0.map(odd_bits);
@@ -524,70 +545,58 @@ impl CompressionConfig {
         Ok(odd)
     }
 
-    pub(super) fn assign_c1(
-        &self,
-        region: &mut Region<'_, pallas::Base>,
-        round_idx: MainRoundIdx,
-        spread_halves_c: RoundWordSpread,
-        spread_halves_d1: RoundWordSpread,
-    ) -> Result<(AssignedBits<32>, AssignedBits<32>), Error> {
-        let a_1 = self.extras[1];
-        let a_2 = self.extras[1];
-        let a_3 = self.extras[0];
-        let a_4 = self.extras[1];
-        let a_5 = self.message_schedule;
-        let a_6 = self.extras[2];
-        let a_7 = self.extras[3];
-        let a_8 = self.extras[4];
+// gates only take spread values
+pub(super) fn assign_c1(
+    &self,
+    region: &mut Region<'_, pallas::Base>,
+    round_idx: MainRoundIdx,
+    vector_c: &RoundWordDense,
+    vector_d1: &RoundWordDense,
+) -> Result<RoundWordDense, Error> {
+    // Rename these here for ease of matching the gates to the specification.
+    let a_1 = self.lookup.dense;
+    let a_3 = self.extras[0];
+    let a_4 = self.extras[1];
+    let a_5 = self.extras[2];
+    let a_6 = self.extras[3];
 
-        let row = get_c1_row(round_idx);
+    let row = get_upper_sigma_0_row(round_idx);
 
-        self.s_spread_c1.enable(region, row)?;
+    self.s_vector_c1.enable(region, row)?;
 
-        // Assign and copy spread_a_lo, spread_a_hi
-        spread_halves_c
-            .0
-            .copy_advice(|| "spread_m_c", region, a_1, row)?;
-        spread_halves_c
-            .1
-            .copy_advice(|| "spread_n_c", region, a_2, row)?;
-        spread_halves_c
-            .2
-            .copy_advice(|| "spread_o_c", region, a_3, row)?;
-        spread_halves_c
-            .3
-            .copy_advice(|| "spread_p_c", region, a_4, row)?;
+    // Assign and copy a
+    vector_c.0.copy_advice(|| "vector_c_lo", region, a_3, row - 1 )?;
+    vector_c.1.copy_advice(|| "vector_c_mo", region, a_3, row)?;
+    vector_c.2.copy_advice(|| "vector_c_el", region, a_3, row + 1)?;
+    vector_c.3.copy_advice(|| "vector_c_hi", region, a_3, row + 2)?;
+
+    // Assign and copy d_lo, d_hi
+    vector_d1.0.copy_advice(|| "vector_d1_lo", region, a_4, row - 1)?;
+    vector_d1.1.copy_advice(|| "vector_d1_mo", region, a_4, row)?;
+    vector_d1.2.copy_advice(|| "vector_d1_el", region, a_4, row + 1)?;
+    vector_d1.3.copy_advice(|| "vector_d1_hi", region, a_4, row + 2)?;
 
 
-        // Assign and copy spread_b_lo, spread_b_hi
-        spread_halves_d1
-            .0
-            .copy_advice(|| "spread_m_d1", region, a_5, row)?;
-        spread_halves_d1
-            .1
-            .copy_advice(|| "spread_n_d1", region, a_6, row)?;
-        spread_halves_d1
-            .2
-            .copy_advice(|| "spread_o_d1", region, a_7, row)?;
-        spread_halves_d1
-            .3
-            .copy_advice(|| "spread_p_d1", region, a_8, row)?;
+    // Assign c1, c1_carry
+    let (vector_c1, vector_c1_carry) = sum_with_carry(vec![
+        (vector_c.0.value_u16(), vector_c.1.value_u16(),vector_c.2.value_u16(), vector_c.3.value_u16()),
+        (vector_d1.0.value_u16(), vector_d1.1.value_u16(),vector_d1.2.value_u16(), vector_d1.3.value_u16()),
 
-        // might have to change u64 to u128
-        let spread_c1: Value<[bool; 128]> = spread_halves_c
-            .value()
-            .zip(spread_halves_d1.value())
-            .map(|(a, b)| i2lebsp(a + b));
+    ]);
+    
+    let vector_c1_dense = self.assign_word_halves_dense(region, row-1, a_1, 
+        row, a_1,row+1, a_1,row+2, a_1, vector_c1)?;
 
-        let spread_m_c1: Value<[bool; 32]> = spread_c1.map(|m| m[..32].try_into().unwrap());
-        let spread_n_c1: Value<[bool; 32]> = spread_c1.map(|m| m[32..64].try_into().unwrap());
-        let spread_o_c1: Value<[bool; 32]> = spread_c1.map(|m| m[64..96].try_into().unwrap());
-        let spread_p_c1: Value<[bool; 32]> = spread_c1.map(|m| m[96..].try_into().unwrap());
+    region.assign_advice(
+        || "vector_c1_carry",
+        a_3,
+        row - 1,
+        || vector_c1_carry.map(pallas::Base::from),
+    )?;
 
+    Ok(vector_c1_dense)
 
-        self.assign_c1_outputs(region, row, spread_m_c1, spread_n_c1, spread_o_c1, spread_p_c1)
-
-    }
+}
 
 
     pub(super) fn assign_ch_neg(

@@ -2,7 +2,7 @@
 
 pub mod compression_gate;
 //pub mod subregion_initial;
-//pub mod compression_util;
+pub mod compression_util;
 
 
 use halo2_proofs::{
@@ -41,22 +41,23 @@ pub trait VectorVar<
     const D_LEN: usize,
 >
 {
-    fn spread_a(&self) -> Value<[bool; A_LEN]>;
-    fn spread_b(&self) -> Value<[bool; B_LEN]>;
-    fn spread_c(&self) -> Value<[bool; C_LEN]>;
-    fn spread_d(&self) -> Value<[bool; D_LEN]>;
+    fn spread_m(&self) -> Value<[bool; A_LEN]>;
+    fn spread_n(&self) -> Value<[bool; B_LEN]>;
+    fn spread_o(&self) -> Value<[bool; C_LEN]>;
+    fn spread_p(&self) -> Value<[bool; D_LEN]>;
 
     fn xor_v(&self) -> Value<[bool; 64]> {
-        self.spread_a()
-            .zip(self.spread_b())
-            .zip(self.spread_c())
-            .zip(self.spread_d())
-            .map(|(((a, b), c), d)| {
-                let xor = b
+        self.spread_m()
+            .zip(self.spread_n())
+            .zip(self.spread_o())
+            .zip(self.spread_p())
+            .map(|(((m, n), o), p)| {
+                
+                let xor = m
                     .iter()
-                    .chain(c.iter())
-                    .chain(d.iter())
-                    .chain(a.iter())
+                    .chain(n.iter())
+                    .chain(o.iter())
+                    .chain(p.iter())
                     .copied()
                     .collect::<Vec<_>>();
 
@@ -79,55 +80,55 @@ pub trait VectorVar<
 ///   are needed.
 #[derive(Clone, Debug)]
 pub struct AbcdVar {
-    a: SpreadVar<16, 32>,
-    b: SpreadVar<16, 32>,
-    c: SpreadVar<16, 32>,
-    d: SpreadVar<16, 32>,
+    m: SpreadVar<16, 32>,
+    n: SpreadVar<16, 32>,
+    o: SpreadVar<16, 32>,
+    p: SpreadVar<16, 32>,
 }
 
 impl AbcdVar {
-    fn a_range() -> Range<usize> {
+    fn m_range() -> Range<usize> {
         0..16
     }
 
-    fn b_range() -> Range<usize> {
+    fn n_range() -> Range<usize> {
         16..32
     }
 
-    fn c_range() -> Range<usize> {
+    fn o_range() -> Range<usize> {
         32..48
     }
 
-    fn d_range() -> Range<usize> {
+    fn p_range() -> Range<usize> {
         48..64
     }
 
     fn pieces(val: u64) -> Vec<Vec<bool>> {
         let val: [bool; 64] = i2lebsp(val.into());
         vec![
-            val[Self::a_range()].to_vec(),
-            val[Self::b_range()].to_vec(),
-            val[Self::c_range()].to_vec(),
-            val[Self::d_range()].to_vec(),
+            val[Self::m_range()].to_vec(),
+            val[Self::n_range()].to_vec(),
+            val[Self::o_range()].to_vec(),
+            val[Self::p_range()].to_vec(),
         ]
     }
 }
 
 impl VectorVar<32, 32, 32, 32> for AbcdVar {
-    fn spread_a(&self) -> Value<[bool; 32]> {
-        self.a.spread.value().map(|v| v.0)
+    fn spread_m(&self) -> Value<[bool; 32]> {
+        self.m.spread.value().map(|v| v.0)
     }
 
-    fn spread_b(&self) -> Value<[bool; 32]> {
-        self.b.spread.value().map(|v| v.0)
+    fn spread_n(&self) -> Value<[bool; 32]> {
+        self.n.spread.value().map(|v| v.0)
     }
 
-    fn spread_c(&self) -> Value<[bool; 32]> {
-        self.b.spread.value().map(|v| v.0)
+    fn spread_o(&self) -> Value<[bool; 32]> {
+        self.o.spread.value().map(|v| v.0)
     }
 
-    fn spread_d(&self) -> Value<[bool; 32]> {
-        self.d.spread.value().map(|v| v.0)
+    fn spread_p(&self) -> Value<[bool; 32]> {
+        self.p.spread.value().map(|v| v.0)
     }
 }
 
@@ -145,16 +146,16 @@ impl EfghVar {
         0..16
     }
 
-    fn c_range() -> Range<usize> {
-        32..48
-    }
-
     fn b_lo_range() -> Range<usize> {
         16..24
     }
 
     fn b_hi_range() -> Range<usize> {
         24..32
+    }
+
+    fn c_range() -> Range<usize> {
+        32..48
     }
 
     fn d_range() -> Range<usize> {
@@ -207,21 +208,17 @@ impl VectorVar<32,32,32,32> for EfghVar {
 
 #[derive(Clone, Debug)]
 pub struct IjklVar {
-    a_lo: SpreadVar<1, 2>,
-    a_hi: SpreadVar<15, 32>,
+    a: SpreadVar<16, 32>,
     b: SpreadVar<16, 32>,
     c: SpreadVar<16, 32>,
-    d: SpreadVar<16, 32>,
+    d_lo: SpreadVar<1, 2>,
+    d_hi: SpreadVar<15, 32>,
 }
 
 impl IjklVar {
     
-    fn a_lo_range() -> Range<usize> {
-        1..2
-    }
-
-    fn a_hi_range() -> Range<usize> {
-        2..16
+    fn a_range() -> Range<usize> {
+        1..16
     }
 
     fn b_range() -> Range<usize> {
@@ -233,8 +230,12 @@ impl IjklVar {
     }
 
 
-    fn d_range() -> Range<usize> {
-        48..64
+    fn d_lo_range() -> Range<usize> {
+        48..49
+    }
+
+    fn d_hi_range() -> Range<usize> {
+        49..64
     }
 
     fn pieces(val: u64) -> Vec<Vec<bool>> {
@@ -242,9 +243,9 @@ impl IjklVar {
         vec![
             val[Self::b_range()].to_vec(),
             val[Self::c_range()].to_vec(),
-            val[Self::a_lo_range()].to_vec(),
-            val[Self::a_hi_range()].to_vec(),
-            val[Self::d_range()].to_vec(),
+            val[Self::d_lo_range()].to_vec(),
+            val[Self::d_hi_range()].to_vec(),
+            val[Self::a_range()].to_vec(),
         ]
     }
 }
@@ -253,18 +254,7 @@ impl IjklVar {
 impl VectorVar<32,32,32,32> for IjklVar {
 
     fn spread_a(&self) -> Value<[bool; 32]> {
-        self.a_lo
-            .spread
-            .value()
-            .zip(self.a_hi.spread.value())
-            .map(|(a_lo, a_hi)| {
-                a_lo.iter()
-                    .chain(a_hi.iter())
-                    .copied()
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap()
-            })
+        self.a.spread.value().map(|v| v.0)
     }
 
     fn spread_b(&self) -> Value<[bool; 32]> {
@@ -276,7 +266,18 @@ impl VectorVar<32,32,32,32> for IjklVar {
     }
 
     fn spread_d(&self) -> Value<[bool; 32]> {
-        self.d.spread.value().map(|v| v.0)
+        self.d_lo
+            .spread
+            .value()
+            .zip(self.d_hi.spread.value())
+            .map(|(d_lo, d_hi)| {
+                d_lo.iter()
+                    .chain(d_hi.iter())
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap()
+            })
     }
 
 }
@@ -529,14 +530,14 @@ pub(crate) struct CompressionConfig {
     lookup: SpreadInputs,
     message_schedule: Column<Advice>,
     extras: [Column<Advice>; 6],
-    s_spread_a1: Selector,
-    s_spread_b1: Selector,
-    s_spread_c1: Selector,
-    s_spread_d1: Selector,
-    s_spread_a2: Selector,
-    s_spread_b2: Selector,
-    s_spread_c2: Selector,
-    s_spread_d2: Selector,
+    s_vector_a1: Selector,
+    s_vector_b1: Selector,
+    s_vector_c1: Selector,
+    s_vector_d1: Selector,
+    s_vector_a2: Selector,
+    s_vector_b2: Selector,
+    s_vector_c2: Selector,
+    s_vector_d2: Selector,
 
     // Decomposition gate for AbcdVar
     s_decompose_abcd: Selector,
@@ -558,14 +559,14 @@ impl CompressionConfig {
         message_schedule: Column<Advice>,
         extras: [Column<Advice>; 6],
     ) -> Self {
-        let s_spread_a1 = meta.selector();
-        let s_spread_b1 = meta.selector();
-        let s_spread_c1 = meta.selector();
-        let s_spread_d1 = meta.selector();
-        let s_spread_a2 = meta.selector();
-        let s_spread_b2 = meta.selector();
-        let s_spread_c2 = meta.selector();
-        let s_spread_d2 = meta.selector();
+        let s_vector_a1 = meta.selector();
+        let s_vector_b1 = meta.selector();
+        let s_vector_c1 = meta.selector();
+        let s_vector_d1 = meta.selector();
+        let s_vector_a2 = meta.selector();
+        let s_vector_b2 = meta.selector();
+        let s_vector_c2 = meta.selector();
+        let s_vector_d2 = meta.selector();
 
         // Decomposition gate for AbcdVar
         let s_decompose_abcd = meta.selector();
@@ -582,44 +583,38 @@ impl CompressionConfig {
         let a_2 = lookup.spread;
         let a_3 = extras[0];
         let a_4 = extras[1];
-        let a_5 = message_schedule;
-        let a_6 = extras[2];
-        let a_7 = extras[3];
-        let a_8 = extras[4];
-        let a_9 = extras[5];
+        // let a_5 = message_schedule; ask what was this?
+        let a_5 = extras[2];
+        let a_6 = extras[3];
 
 
-        //  a0  |  a1  |  a2  |  a3   |  a4    |  a5    |  a6     |  a7   |  a8    |
-        //  tb  |  b   |  sb  |  clo  |  sclo  |  cmid  |  scmid  |  wlo  |  swlo  |
-        //  td  |  d   |  sd  |  a    |  sa    |  chi   |  schi   |  whi  |  swhi  |
+        // Decompose `A,B,C,D` words into (16, 16, 16, 16)-bit chunks.
 
-
-        //  a0  |  a1  |  a2  |  a3   |  a4    |  a5   |  a6    |  a7   |  a8    |
-        //      |  b   |  sb  |  c    |  sc    |  wlo  |  swlo  |  wmo  |  swmo  |
-        //      |  d   |  sd  |  a    |  sa    |  wel  |  swel  |  whi  |  swhi  |
-
-
-
+        //    a0   |  a1  |  a2    |  a3    |  a4   |   a5   |    a6    |
+        //  tag_m  |  m   |  s_m   |  ---   |  ---  |  ---   |  ---     |
+        //  tag_n  |  n   |  s_n   |  ---   |  ---  |  ---   |  ---     |
+        //  tag_o  |  o   |  s_o   |  ---   |  ---  |  ---   |   ---    |
+        //  tag_p  |  p   |  s_p   |  ---   |  ---  |  ---   |  ---     |
 
         // Decompose `A,B,C,D` words into (16, 16, 16, 16)-bit chunks.
         meta.create_gate("decompose ABCD", |meta| {
             let s_decompose_abcd = meta.query_selector(s_decompose_abcd);
-            let a = meta.query_advice(a_3, Rotation::next()); // 2-bit chunk
-            let spread_a = meta.query_advice(a_4, Rotation::next());
+            let a = meta.query_advice(a_1, Rotation::prev()); // 2-bit chunk
+            let spread_a = meta.query_advice(a_2, Rotation::prev());
             let b = meta.query_advice(a_1, Rotation::cur()); // 11-bit chunk
             let spread_b = meta.query_advice(a_2, Rotation::cur());
-            let c = meta.query_advice(a_3, Rotation::cur()); // 3-bit chunk
-            let spread_c = meta.query_advice(a_4, Rotation::cur());
-            let d = meta.query_advice(a_1, Rotation::next()); // 7-bit chunk
-            let spread_d = meta.query_advice(a_2, Rotation::next());
-            let word_lo = meta.query_advice(a_5, Rotation::cur());
-            let spread_word_lo = meta.query_advice(a_6, Rotation::cur());
-            let word_mo = meta.query_advice(a_5, Rotation::next());
-            let spread_word_mo = meta.query_advice(a_6, Rotation::next());
-            let word_el = meta.query_advice(a_7, Rotation::cur());
-            let spread_word_el = meta.query_advice(a_8, Rotation::cur());
-            let word_hi = meta.query_advice(a_7, Rotation::next());
-            let spread_word_hi = meta.query_advice(a_8, Rotation::next());
+            let c = meta.query_advice(a_1, Rotation::next()); // 3-bit chunk
+            let spread_c = meta.query_advice(a_2, Rotation::next());
+            let d = meta.query_advice(a_1, Rotation(2)); // 7-bit chunk
+            let spread_d = meta.query_advice(a_2, Rotation(2));
+            // let word_lo = meta.query_advice(a_1, Rotation::prev());
+            // let spread_word_lo = meta.query_advice(a_2, Rotation::prev());
+            // let word_mo = meta.query_advice(a_1, Rotation::cur());
+            // let spread_word_mo = meta.query_advice(a_2, Rotation::cur());
+            // let word_el = meta.query_advice(a_1, Rotation::next());
+            // let spread_word_el = meta.query_advice(a_2, Rotation::next());
+            // let word_hi = meta.query_advice(a_1, Rotation(2));
+            // let spread_word_hi = meta.query_advice(a_2, Rotation(2));
 
             CompressionGate::s_decompose_abcd(
                 s_decompose_abcd,
@@ -631,40 +626,48 @@ impl CompressionConfig {
                 spread_c,
                 d,
                 spread_d,
-                word_lo,
-                spread_word_lo,
-                word_mo,
-                spread_word_mo,
-                word_el,
-                spread_word_el,
-                word_hi,
-                spread_word_hi,
+                // word_lo,
+                // spread_word_lo,
+                // word_mo,
+                // spread_word_mo,
+                // word_el,
+                // spread_word_el,
+                // word_hi,
+                // spread_word_hi,
             )
         });
 
 
-        // |  a1  |  a2  |  a3   |  a4    |  a5    |  a6     |  a7   |  a8    |
-        // |  d   |  sd  |  blo  |  sblo  |  bhi   |  sbhi   |  wlo  |  swlo  |
-        // |  c   |  sc  |  a    |  sa    |  ahi   |  schi   |  whi  |  swhi  |
+        //     a0      |  a1     |  a2       |  a3    |  a4     |  a5    |  a6      |
+        //   {0,1,2}   |  e      |  s_e      |  ---   |  ---    |  w_lo  |  s_w_lo  |
+        //    {0,1}    |  f_lo   |  s_f_lo   |  ---   |  ---    |  w_mo  |  s_w_mo  |
+        //    {0,1}    |  f_hi   |  s_f_hi   |  ---   |  ---    |  w_el  |  s_w_el  |
+        //   {0,1,2}   |  g      |  s_g      |  ---   |  ---    |  w_hi  |  s_w_hi  |
+        //   {0,1,2}   |  h      |  s_h      |  ---   |  ---    |  ---   |   ---    |
+
 
         // todo fix notation efgh and abcd
-        // Decompose `E,F,G,H` words into (16, 16, 8, 8, 16)-bit chunks.
+        // Decompose `H,G,F,E` words into (16, 16, 8, 8, 16)-bit chunks.
         meta.create_gate("Decompose EFGH", |meta| {
             let s_decompose_efgh = meta.query_selector(s_decompose_efgh);
-            let a = meta.query_advice(a_3, Rotation::next()); // 16-bit chunk
-            let spread_a = meta.query_advice(a_4, Rotation::next());
-            let b_lo = meta.query_advice(a_3, Rotation::cur()); // 8-bit chunk
-            let spread_b_lo = meta.query_advice(a_4, Rotation::cur());
-            let b_hi = meta.query_advice(a_5, Rotation::cur()); // 8-bit chunk
-            let spread_b_hi = meta.query_advice(a_6, Rotation::cur());
-            let c = meta.query_advice(a_1, Rotation::next()); // 16-bit chunk
-            let spread_c = meta.query_advice(a_2, Rotation::next());
-            let d = meta.query_advice(a_1, Rotation::cur()); // 16-bit chunk
-            let spread_d = meta.query_advice(a_2, Rotation::cur());
-            let word_lo = meta.query_advice(a_7, Rotation::cur());
-            let spread_word_lo = meta.query_advice(a_8, Rotation::cur());
-            let word_hi = meta.query_advice(a_7, Rotation::next());
-            let spread_word_hi = meta.query_advice(a_8, Rotation::next());
+            let a = meta.query_advice(a_1, Rotation::prev()); // 16-bit chunk
+            let spread_a = meta.query_advice(a_2, Rotation::prev());
+            let b_lo = meta.query_advice(a_1, Rotation::cur()); // 8-bit chunk
+            let spread_b_lo = meta.query_advice(a_2, Rotation::cur());
+            let b_hi = meta.query_advice(a_1, Rotation::next()); // 8-bit chunk
+            let spread_b_hi = meta.query_advice(a_2, Rotation::next());
+            let c = meta.query_advice(a_1, Rotation(2)); // 16-bit chunk
+            let spread_c = meta.query_advice(a_2, Rotation(2));
+            let d = meta.query_advice(a_1, Rotation(3)); // 16-bit chunk
+            let spread_d = meta.query_advice(a_2, Rotation(3));
+            let word_lo = meta.query_advice(a_5, Rotation::prev());
+            let spread_word_lo = meta.query_advice(a_6, Rotation::prev());
+            let word_mo = meta.query_advice(a_5, Rotation::cur());
+            let spread_word_mo = meta.query_advice(a_6, Rotation::cur());
+            let word_el = meta.query_advice(a_5, Rotation::next());
+            let spread_word_el = meta.query_advice(a_6, Rotation::next());
+            let word_hi = meta.query_advice(a_5, Rotation(2));
+            let spread_word_hi = meta.query_advice(a_6, Rotation(2));
 
             CompressionGate::s_decompose_efgh(
                 s_decompose_efgh,
@@ -685,23 +688,36 @@ impl CompressionConfig {
             )
         });
 
-        // Decompose `E,F,G,H` words into (16, 16, 16, 15, 1)-bit chunks.
+        // Decompose `I,J,K,L` words into (1, 15, 16, 16)-bit chunks.
+        // add range check for 1 bit chunk
+        //    a0      |  a1     |  a2       |  a3    |  a4     |  a5    |  a6      |
+        //   {0,1}    |  i_hi   |  s_i_hi   |  i_lo  |  s_i_lo |  w_lo  |  s_w_lo  |
+        //   {0,1,2}  |  j      |  s_j      |  ---   |  ---    |  w_mo  |  s_w_mo  |
+        //   {0,1,2}  |  k      |  s_k      |  ---   |  ---    |  w_el  |  s_w_el  |
+        //   {0,1,2}  |  l      |  s_l      |  ---   |  ---    |  w_hi  |  s_w_hi  |
+
+
+        // Decompose `L,K,J,I` words into (16, 16, 16, 15, 1)-bit chunks.
         meta.create_gate("Decompose IJKL", |meta| {
             let s_decompose_ijkl = meta.query_selector(s_decompose_ijkl);
-            let j = meta.query_advice(a_3, Rotation::next()); // 1-bit chunk
-            let spread_j = meta.query_advice(a_4, Rotation::next());
-            let i_lo = meta.query_advice(a_3, Rotation::cur()); // 15-bit chunk
-            let spread_i_lo = meta.query_advice(a_4, Rotation::cur());
-            let i_hi = meta.query_advice(a_5, Rotation::cur()); // 16-bit chunk
-            let spread_i_hi = meta.query_advice(a_6, Rotation::cur());
+            let i_lo = meta.query_advice(a_3, Rotation::prev()); // 1-bit chunk
+            let spread_i_lo = meta.query_advice(a_4, Rotation::prev());
+            let i_hi = meta.query_advice(a_1, Rotation::prev()); // 15-bit chunk
+            let spread_i_hi = meta.query_advice(a_2, Rotation::prev());
+            let j = meta.query_advice(a_1, Rotation::cur()); // 16-bit chunk
+            let spread_j = meta.query_advice(a_2, Rotation::cur());
             let k = meta.query_advice(a_1, Rotation::next()); // 16-bit chunk
             let spread_k = meta.query_advice(a_2, Rotation::next());
-            let l = meta.query_advice(a_1, Rotation::cur()); // 16-bit chunk
-            let spread_l = meta.query_advice(a_2, Rotation::cur());
-            let word_lo = meta.query_advice(a_7, Rotation::cur());
-            let spread_word_lo = meta.query_advice(a_8, Rotation::cur());
-            let word_hi = meta.query_advice(a_7, Rotation::next());
-            let spread_word_hi = meta.query_advice(a_8, Rotation::next());
+            let l = meta.query_advice(a_1, Rotation(2)); // 16-bit chunk
+            let spread_l = meta.query_advice(a_2, Rotation(2));
+            let word_lo = meta.query_advice(a_5, Rotation::prev());
+            let spread_word_lo = meta.query_advice(a_6, Rotation::prev());
+            let word_mo = meta.query_advice(a_5, Rotation::cur());
+            let spread_word_mo = meta.query_advice(a_6, Rotation::cur());
+            let word_el = meta.query_advice(a_5, Rotation::cur());
+            let spread_word_el = meta.query_advice(a_6, Rotation::cur());
+            let word_hi = meta.query_advice(a_5, Rotation::next());
+            let spread_word_hi = meta.query_advice(a_6, Rotation::next());
 
             CompressionGate::s_decompose_ijkl(
                 s_decompose_ijkl,
@@ -722,126 +738,174 @@ impl CompressionConfig {
             )
         });
 
-        // |  a1     |  a2    |  a3     |  a4     |  a5    |  a6    |  a7     |  a8    |
-        // |  sma1   |  sna1  |  soa1   |  spa1   |  sma   |  sna   |  soa    |  spa   |
-        // |  smb    |  snb   |  sob    |  spb    |  smx   |  snx   |  sox    |  spx   |
+        // Va1 = Va + Vb + x abcd words
 
-        // Va1=Va+Vb+x abcd words
+        //     a0     |   a1    |    a2     |  a3    |  a4    |  a5    |  a6   |         |
+        //  tag_m_a1  |  m_a1   |  s_m_a1   |a1_carry|  m_a   |  m_b   |  m_x  |  ----   |
+        //  tag_n_a1  |  n_a1   |  s_m_a1   |        |  n_a   |  n_b   |  n_x  |  ----   |
+        //  tag_o_a1  |  o_a1   |  s_m_a1   |        |  o_a   |  o_b   |  o_x  |  ----   |
+        //  tag_p_a1  |  p_a1   |  s_m_a1   |        |  p_a   |  p_b   |  p_x  |  ----   |
+
+
+        // Va1 = Va + Vb + x abcd words
         // (16, 16, 16, 16)-bit into ( m, n, o, p ) chunks
 
-        meta.create_gate("s_spread_a1", |meta| {
-            let s_spread_a1 = meta.query_selector(s_spread_a1);
-            let spread_m_a1 = meta.query_advice(a_1, Rotation::cur());
-            let spread_n_a1 = meta.query_advice(a_2, Rotation::cur());
-            let spread_o_a1 = meta.query_advice(a_3, Rotation::cur());
-            let spread_p_a1 = meta.query_advice(a_4, Rotation::cur());
+        meta.create_gate("s_vector_a1", |meta| {
 
-            let spread_m_a = meta.query_advice(a_5, Rotation::cur());
-            let spread_n_a = meta.query_advice(a_6, Rotation::cur());
-            let spread_o_a = meta.query_advice(a_7, Rotation::cur());
-            let spread_p_a = meta.query_advice(a_8, Rotation::cur());
+            let s_vector_a1 = meta.query_selector(s_vector_a1);
 
-            let spread_m_b = meta.query_advice(a_1, Rotation::next());
-            let spread_n_b = meta.query_advice(a_2, Rotation::next());
-            let spread_o_b = meta.query_advice(a_3, Rotation::next());
-            let spread_p_b = meta.query_advice(a_4, Rotation::next());
+            let vector_m_a1 = meta.query_advice(a_1, Rotation::prev());
+            let vector_n_a1 = meta.query_advice(a_1, Rotation::cur());
+            let vector_o_a1 = meta.query_advice(a_1, Rotation::next());
+            let vector_p_a1 = meta.query_advice(a_1, Rotation(2));
 
-            let spread_m_x = meta.query_advice(a_5, Rotation::next());
-            let spread_n_x = meta.query_advice(a_6, Rotation::next());
-            let spread_o_x = meta.query_advice(a_7, Rotation::next());
-            let spread_p_x = meta.query_advice(a_8, Rotation::next());
+            let vector_m_a = meta.query_advice(a_3, Rotation::prev());
+            let vector_n_a = meta.query_advice(a_3, Rotation::cur());
+            let vector_o_a = meta.query_advice(a_3, Rotation::next());
+            let vector_p_a = meta.query_advice(a_3, Rotation(2));
+
+            let vector_m_b = meta.query_advice(a_4, Rotation::prev());
+            let vector_n_b = meta.query_advice(a_4, Rotation::cur());
+            let vector_o_b = meta.query_advice(a_4, Rotation::next());
+            let vector_p_b = meta.query_advice(a_4, Rotation(2));
+
+            let vector_m_x = meta.query_advice(a_5, Rotation::prev());
+            let vector_n_x = meta.query_advice(a_5, Rotation::cur());
+            let vector_o_x = meta.query_advice(a_5, Rotation::next());
+            let vector_p_x = meta.query_advice(a_5, Rotation(2));
 
 
-            CompressionGate::s_spread_a1(
-                s_spread_a1,
+            CompressionGate::s_vector_a1(
+                s_vector_a1,
+                vector_m_a1,
+                vector_n_a1,
+                vector_o_a1,
+                vector_p_a1,
+                vector_m_a,
+                vector_n_a,
+                vector_o_a,
+                vector_p_a,
+                vector_m_b,
+                vector_n_b,
+                vector_o_b,
+                vector_p_b,
+                vector_m_x,
+                vector_n_x,
+                vector_o_x,
+                vector_p_x,
+            )
+        });
+ 
+         // Vd1 ← (Vd xor Va1) rotate right 32
+
+        //     a0     |   a1        |    a2         |    a3    |     a4   |   a5    |   a6    |
+        //  {0,1,2}   |  m_d        |   s_m_d       |    ---   |     ---  |  ----   |   ----  |
+        //  {0,1,2}   |  n_d        |   s_n_d       |    ---   |     ---  |  ----   |   ----  |
+        //  {0,1,2}   |  o_d        |   s_o_d       |    ---   |     ---  |  ----   |   ----  |
+        //  {0,1,2}   |  p_d        |   s_p_d       |    ---   |     ---  |  ----   |   ----  |
+
+
+        //     a0     |   a1        |    a2         |    a3    |    a4    |   a5    |   a6    |
+        //  {0,1,2}   |  m_d1_even  |  s_m_d1_even  |  ----    |  s_m_a1  |  s_m_d  |  ----   |
+        //  {0,1,2}   |  m_d1_odd   |  s_m_d1_odd   |  ----    |  s_n_a1  |  s_n_d  |  ----   |
+        //  {0,1,2}   |  n_d1_even  |  s_m_d1_even  |  ----    |  s_o_a1  |  s_o_d  |  ----   |
+        //  {0,1,2}   |  n_d1_odd   |  s_m_d1_odd   |  ----    |  s_p_a1  |  s_p_d  |  ----   |
+        //  {0,1,2}   |  o_d1_even  |  s_m_d1_even  |  ----    |  ----    |  ----   |  ----   |
+        //  {0,1,2}   |  o_d1_odd   |  s_m_d1_odd   |  ----    |  ----    |  ----   |  ----   |
+        //  {0,1,2}   |  p_d1_even  |  s_m_d1_even  |  ----    |   ----   |  ----   |  ----   |
+        //  {0,1,2}   |  p_d1_odd   |  s_m_d1_odd   |  ----    |   ----   |  ----   |  ----   |        
+
+
+        // Vd1 ← (Vd xor Va1) rotate right 32
+        // (16, 16, 16, 16)-bit chunks
+        meta.create_gate("s_vector_d1", |meta| {
+
+            let s_spread_d1 = meta.query_selector(s_spread_d1);
+
+            let spread_m_d1_even = meta.query_advice(a_2, Rotation::prev());
+            let spread_m_d1_odd = meta.query_advice(a_2, Rotation::cur());
+            let spread_n_d1_even = meta.query_advice(a_2, Rotation::next());
+            let spread_n_d1_odd = meta.query_advice(a_2, Rotation(2));
+
+            let spread_o_d1_even = meta.query_advice(a_2, Rotation(3));
+            let spread_o_d1_odd = meta.query_advice(a_2, Rotation(4));
+            let spread_p_d1_even = meta.query_advice(a_2, Rotation(5));
+            let spread_p_d1_odd = meta.query_advice(a_2, Rotation(6));
+
+            let spread_m_a1 = meta.query_advice(a_4, Rotation::prev());
+            let spread_n_a1 = meta.query_advice(a_4, Rotation::cur());
+            let spread_o_a1 = meta.query_advice(a_4, Rotation::next());
+            let spread_p_a1 = meta.query_advice(a_4, Rotation(2));
+
+            let spread_m_d = meta.query_advice(a_5, Rotation::prev());
+            let spread_n_d = meta.query_advice(a_5, Rotation::cur());
+            let spread_o_d = meta.query_advice(a_5, Rotation::next());
+            let spread_p_d = meta.query_advice(a_5, Rotation(2));
+
+
+            CompressionGate::s_spread_d1(
+                s_spread_d1,
+                spread_m_d1_even,
+                spread_m_d1_odd,
+                spread_n_d1_even,
+                spread_n_d1_odd,
+                spread_o_d1_even,
+                spread_o_d1_odd,
+                spread_p_d1_even,
+                spread_p_d1_odd,
                 spread_m_a1,
                 spread_n_a1,
                 spread_o_a1,
                 spread_p_a1,
-                spread_m_a,
-                spread_n_a,
-                spread_o_a,
-                spread_p_a,
-                spread_m_b,
-                spread_n_b,
-                spread_o_b,
-                spread_p_b,
-                spread_m_x,
-                spread_n_x,
-                spread_o_x,
-                spread_p_x,
-
+                spread_m_d,
+                spread_n_d,
+                spread_o_d,
+                spread_p_d,
             )
         });
 
-        // s_upper_sigma_1 on efgh words
-        // (16, 16, 8, 8, 16)-bit chunks
-        meta.create_gate("s_spread_d1", |meta| {
-            let s_spread_d1 = meta.query_selector(s_spread_d1);
-            let spread_r0_even = meta.query_advice(a_2, Rotation::prev());
-            let spread_r0_odd = meta.query_advice(a_2, Rotation::cur());
-            let spread_r1_even = meta.query_advice(a_2, Rotation::next());
-            let spread_r1_odd = meta.query_advice(a_3, Rotation::cur());
-            let spread_a_lo = meta.query_advice(a_3, Rotation::next());
-            let spread_a_hi = meta.query_advice(a_4, Rotation::next());
-            let spread_b_lo = meta.query_advice(a_3, Rotation::prev());
-            let spread_b_hi = meta.query_advice(a_4, Rotation::prev());
-            let spread_c = meta.query_advice(a_5, Rotation::cur());
-            let spread_d = meta.query_advice(a_4, Rotation::cur());
+        // Vc1 = Vc + Vd1 abcd words
 
-            CompressionGate::s_spread_d1(
-                s_spread_d1,
-                spread_r0_even,
-                spread_r0_odd,
-                spread_r1_even,
-                spread_r1_odd,
-                spread_a_lo,
-                spread_a_hi,
-                spread_b_lo,
-                spread_b_hi,
-                spread_c,
-                spread_d,
-            )
-        });
-
-        // |  a1     |  a2    |  a3     |  a4     |  a5    |  a6    |  a7     |  a8    |
-        // |  smc1   |  snc1  |  soc1   |  spc1   |  ---   |  ----  |  ---    |  ----  |
-        // |  smc    |  snc   |  soc    |  spc    |  smd1  |  snd1  |  sod1   |  spd1  |
+        //     a0     |   a1    |    a2     |  a3    |  a4    |  a5    |  a6   |
+        //  tag_m_a1  |  m_a1   |  s_m_a1   |a1_carry|  m_a   |  m_b   |  ---  |  ----   |
+        //  tag_n_a1  |  n_a1   |  s_m_a1   |        |  n_a   |  n_b   |  ---  |  ----   |
+        //  tag_o_a1  |  o_a1   |  s_m_a1   |        |  o_a   |  o_b   |  ---  |  ----   |
+        //  tag_p_a1  |  p_a1   |  s_m_a1   |        |  p_a   |  p_b   |  ---  |  ----   |
 
         // Vc1=Vc+Vd1 abcd words
         // (16, 16, 16, 16)-bit chunks
-        meta.create_gate("s_spread_c1", |meta| {
-            let s_spread_c1 = meta.query_selector(s_spread_c1);
-            let spread_m_c1 = meta.query_advice(a_1, Rotation::cur());
-            let spread_n_c1 = meta.query_advice(a_2, Rotation::cur());
-            let spread_o_c1 = meta.query_advice(a_3, Rotation::cur());
-            let spread_p_c1 = meta.query_advice(a_4, Rotation::cur());
+        meta.create_gate("s_vector_c1", |meta| {
+            let s_vector_c1 = meta.query_selector(s_vector_c1);
+            let vector_m_c1 = meta.query_advice(a_1, Rotation::prev());
+            let vector_n_c1 = meta.query_advice(a_1, Rotation::cur());
+            let vector_o_c1 = meta.query_advice(a_1, Rotation::next());
+            let vector_p_c1 = meta.query_advice(a_1, Rotation(2));
 
-            let spread_m_c = meta.query_advice(a_1, Rotation::next());
-            let spread_n_c = meta.query_advice(a_2, Rotation::next());
-            let spread_o_c = meta.query_advice(a_3, Rotation::next());
-            let spread_p_c = meta.query_advice(a_4, Rotation::next());
+            let vector_m_c = meta.query_advice(a_4, Rotation::prev());
+            let vector_n_c = meta.query_advice(a_4, Rotation::cur());
+            let vector_o_c = meta.query_advice(a_4, Rotation::next());
+            let vector_p_c = meta.query_advice(a_4, Rotation(2));
 
-            let spread_m_d1 = meta.query_advice(a_5, Rotation::next());
-            let spread_n_d1 = meta.query_advice(a_6, Rotation::next());
-            let spread_o_d1 = meta.query_advice(a_7, Rotation::next());
-            let spread_p_d1 = meta.query_advice(a_8, Rotation::next());
+            let vector_m_d1 = meta.query_advice(a_5, Rotation::prev());
+            let vector_n_d1 = meta.query_advice(a_5, Rotation::cur());
+            let vector_o_d1 = meta.query_advice(a_5, Rotation::next());
+            let vector_p_d1 = meta.query_advice(a_5, Rotation(2));
 
 
-            CompressionGate::s_spread_c1(
-                s_spread_c1,
-                spread_m_c1,
-                spread_n_c1,
-                spread_o_c1,
-                spread_p_c1,
-                spread_m_c,
-                spread_n_c,
-                spread_o_c,
-                spread_p_c,
-                spread_m_d1,
-                spread_n_d1,
-                spread_o_d1,
-                spread_p_d1,
+            CompressionGate::s_vector_c1(
+                s_vector_c1,
+                vector_m_c1,
+                vector_n_c1,
+                vector_o_c1,
+                vector_p_c1,
+                vector_m_c,
+                vector_n_c,
+                vector_o_c,
+                vector_p_c,
+                vector_m_d1,
+                vector_n_d1,
+                vector_o_d1,
+                vector_p_d1,
 
             )
         });

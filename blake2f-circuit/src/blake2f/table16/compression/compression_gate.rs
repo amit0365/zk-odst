@@ -1,5 +1,6 @@
 // todo fix chain error
 
+
 use crate::blake2f::table16::gate::Gate;
 
 use super::super::util::*;
@@ -46,19 +47,21 @@ impl<F: PrimeField> CompressionGate<F> {
             + b * F::from(1 << 16)
             + c * F::from(1 << 32)
             + d * F::from(1 << 48)
-            // what is word_lo/word_hi?
+
             + word_lo * (-F::ONE)
-            + word_mo * F::from(1 << 32) * (-F::ONE)
-            + word_el * F::from(1 << 64) * (-F::ONE)
-            + word_hi * F::from(1 << 96) * (-F::ONE);
+            + word_mo * F::from(1 << 16) * (-F::ONE)
+            + word_el * F::from(1 << 32) * (-F::ONE)
+            + word_hi * F::from(1 << 48) * (-F::ONE);
+
         let spread_check = spread_a
             + spread_b * F::from(1 << 32)
             + spread_c * F::from(1 << 64)
             + spread_d * F::from(1 << 96)
+
             + spread_word_lo * (-F::ONE)
+            + spread_word_hi * F::from(1 << 32) * (-F::ONE)
             + spread_word_hi * F::from(1 << 64) * (-F::ONE)
-            + spread_word_hi * F::from(1 << 128) * (-F::ONE)
-            + spread_word_hi * F::from(1 << 192) * (-F::ONE);
+            + spread_word_hi * F::from(1 << 96) * (-F::ONE);
 
         Constraints::with_selector(
             s_decompose_abcd,
@@ -69,7 +72,7 @@ impl<F: PrimeField> CompressionGate<F> {
     }
 
 
-// Decompose `A,B,C,D` words
+// Decompose `H,G,F,E` words
     // (16, 16, 8, 8, 16)-bit chunks
     #[allow(clippy::too_many_arguments)]
     pub fn s_decompose_efgh(
@@ -86,6 +89,10 @@ impl<F: PrimeField> CompressionGate<F> {
         spread_h: Expression<F>,
         word_lo: Expression<F>,
         spread_word_lo: Expression<F>,
+        word_mo: Expression<F>,
+        spread_word_mo: Expression<F>,
+        word_el: Expression<F>,
+        spread_word_el: Expression<F>,
         word_hi: Expression<F>,
         spread_word_hi: Expression<F>,
     ) -> Constraints<
@@ -99,9 +106,10 @@ impl<F: PrimeField> CompressionGate<F> {
             + f_hi * F::from(1 << 16)
             + g * F::from(1 << 32)
             + h * F::from(1 << 48)
-            // what is word_lo/word_hi?
+            + word_lo * (-F::ONE)
             + word_lo * (-F::ONE)
             + word_hi * F::from(1 << 32) * (-F::ONE);
+
         let spread_check = spread_e
             + spread_f_lo * F::from(1 << 16)
             + spread_f_hi * F::from(1 << 32)
@@ -121,22 +129,26 @@ impl<F: PrimeField> CompressionGate<F> {
 
 
     // Decompose `A,B,C,D` words
-    // (16, 16, 16, 15, 1)-bit chunks
+    // (1, 15, 16, 16, 16)-bit chunks
     #[allow(clippy::too_many_arguments)]
     pub fn s_decompose_ijkl(
         s_decompose_efgh: Expression<F>,
-        i_lo: Expression<F>,
-        spread_i_lo: Expression<F>,
-        i_hi: Expression<F>,
-        spread_i_hi: Expression<F>,
+        i: Expression<F>,
+        spread_i: Expression<F>,
         j: Expression<F>,
         spread_j: Expression<F>,
         k: Expression<F>,
         spread_k: Expression<F>,
-        l: Expression<F>,
-        spread_l: Expression<F>,
+        l_lo: Expression<F>,
+        spread_l_lo: Expression<F>,
+        l_hi: Expression<F>,
+        spread_l_hi: Expression<F>,
         word_lo: Expression<F>,
         spread_word_lo: Expression<F>,
+        word_mo: Expression<F>,
+        spread_word_mo: Expression<F>,
+        word_el: Expression<F>,
+        spread_word_el: Expression<F>,
         word_hi: Expression<F>,
         spread_word_hi: Expression<F>,
     ) -> Constraints<
@@ -144,20 +156,27 @@ impl<F: PrimeField> CompressionGate<F> {
         (&'static str, Expression<F>),
         impl Iterator<Item = (&'static str, Expression<F>)>,
     > { 
-        let dense_check = i_lo
-            + i_hi * F::from(1 << 1)
+        let dense_check = i
             + j * F::from(1 << 16)
             + k * F::from(1 << 32)
-            + l * F::from(1 << 48)
+            + l_lo * F::from(1 << 48)
+            + l_hi * F::from(1 << 63)
+
             // what is word_lo/word_hi?
             + word_lo * (-F::ONE)
-            + word_hi * F::from(1 << 32) * (-F::ONE);
+            + word_mo * F::from(1 << 16) * (-F::ONE)
+            + word_el * F::from(1 << 32) * (-F::ONE)
+            + word_hi * F::from(1 << 48) * (-F::ONE);
+
         let spread_check = spread_i_lo
             + spread_i_hi * F::from(1 << 2)
             + spread_j * F::from(1 << 32)
             + spread_k * F::from(1 << 64)
             + spread_l * F::from(1 << 96)
+
             + spread_word_lo * (-F::ONE)
+            + spread_word_mo * F::from(1 << 32) * (-F::ONE)
+            + spread_word_el * F::from(1 << 64) * (-F::ONE)
             + spread_word_hi * F::from(1 << 64) * (-F::ONE);
 
         Constraints::with_selector(
@@ -169,43 +188,44 @@ impl<F: PrimeField> CompressionGate<F> {
     }
 
 
-// convert to take spread values
 // First gate addition modulo, Va ← Va + Vb + x   with input
-//todo change decomposition of words a,b,c,d after each rounds
+// todo change decomposition of words a,b,c,d after each rounds
 #[allow(clippy::too_many_arguments)]
-    pub fn s_spread_a1(
-        s_spread_a1: Expression<F>,
-        spread_m_a1: Expression<F>,
-        spread_n_a1: Expression<F>,
-        spread_o_a1: Expression<F>,
-        spread_p_a1: Expression<F>,
-        spread_m_a: Expression<F>,
-        spread_n_a: Expression<F>,
-        spread_o_a: Expression<F>,
-        spread_p_a: Expression<F>,
-        spread_m_b: Expression<F>,
-        spread_n_b: Expression<F>,
-        spread_o_b: Expression<F>,
-        spread_p_b: Expression<F>,        
-        spread_m_x: Expression<F>,
-        spread_n_x: Expression<F>,
-        spread_o_x: Expression<F>,
-        spread_p_x: Expression<F>,
+    pub fn s_vector_a1(
+        s_vector_a1: Expression<F>,
+        vector_m_a1: Expression<F>,
+        vector_n_a1: Expression<F>,
+        vector_o_a1: Expression<F>,
+        vector_p_a1: Expression<F>,
+        vector_a1_carry: Expression<F>,
+        vector_m_a: Expression<F>,
+        vector_n_a: Expression<F>,
+        vector_o_a: Expression<F>,
+        vector_p_a: Expression<F>,
+        vector_m_b: Expression<F>,
+        vector_n_b: Expression<F>,
+        vector_o_b: Expression<F>,
+        vector_p_b: Expression<F>,        
+        vector_m_x: Expression<F>,
+        vector_n_x: Expression<F>,
+        vector_o_x: Expression<F>,
+        vector_p_x: Expression<F>,
     ) -> Option<(&'static str, Expression<F>)> {
-        let spread_a = spread_m_a + spread_n_a * F::from(1 << 32) + spread_o_a * F::from(1 << 64) + spread_p_a * F::from(1 << 96);
-        let spread_b = spread_m_b + spread_n_b * F::from(1 << 32) + spread_o_b * F::from(1 << 64) + spread_p_b * F::from(1 << 96);
-        let spread_x = spread_m_x + spread_n_x * F::from(1 << 32) + spread_o_x * F::from(1 << 64) + spread_p_x * F::from(1 << 96);
-        let spread_sum = spread_a + spread_b + spread_x;
+        let vector_a = vector_m_a + vector_n_a * F::from(1 << 32) + vector_o_a * F::from(1 << 64) + vector_p_a * F::from(1 << 96);
+        let vector_b = vector_m_b + vector_n_b * F::from(1 << 32) + vector_o_b * F::from(1 << 64) + vector_p_b * F::from(1 << 96);
+        let vector_x = vector_m_x + vector_n_x * F::from(1 << 32) + vector_o_x * F::from(1 << 64) + vector_p_x * F::from(1 << 96);
+        let vector_sum = vector_a + vector_b + vector_x;
 
-        let spread_a1 = spread_m_a1 + spread_n_a1 * F::from(1 << 16) + spread_o_a1 * F::from(1 << 32) + spread_p_a1 * F::from(1 << 48);
+        let vector_a1 = vector_m_a1 + vector_n_a1 * F::from(1 << 16) + vector_o_a1 * F::from(1 << 32) + vector_p_a1 * F::from(1 << 48);
 
-        let check = spread_sum - spread_a1;
+        // WITNESS THE ADDITION
+        let check = vector_sum - (vector_a1_carry * F::from(1 << 32)) - vector_a1;
 
-        Some(("spread_a1", s_spread_a1 * (spread_sum - spread_a1)))
+        Some(("vector_a1", s_vector_a1 * (vector_sum - vector_a1)))
     }
 
 
-// Second gate, xor and bit rotations: Vd ← (Vd xor Va) >>> 32
+// Second gate, xor and bit rotations: Vd1 ← (Vd xor Va1) >>> 32
 // vector_d1 on abcd words
     #[allow(clippy::too_many_arguments)]
     pub fn s_spread_d1(
@@ -218,41 +238,42 @@ impl<F: PrimeField> CompressionGate<F> {
         spread_o_d1_odd: Expression<F>,
         spread_p_d1_even: Expression<F>,
         spread_p_d1_odd: Expression<F>,
-        spread_m_c: Expression<F>,
-        spread_n_c: Expression<F>,
-        spread_o_c: Expression<F>,
-        spread_p_c: Expression<F>,
+        spread_m_a1: Expression<F>,
+        spread_n_a1: Expression<F>,
+        spread_o_a1: Expression<F>,
+        spread_p_a1: Expression<F>,
         spread_m_d: Expression<F>,
         spread_n_d: Expression<F>,
         spread_o_d: Expression<F>,
         spread_p_d: Expression<F>,
     ) -> Option<(&'static str, Expression<F>)> {
 
+        // witnessing that the addition result
         let spread_witness = 
                spread_m_d1_even + spread_m_d1_odd * F::from(2)
             + (spread_n_d1_even + spread_n_d1_odd * F::from(2)) * F::from(1 << 32)
             + (spread_o_d1_even + spread_o_d1_odd * F::from(2)) * F::from(1 << 64)
-            + (spread_p_d1_even + spread_p_d1_odd * F::from(2)) * F::from(1 << 128);
+            + (spread_p_d1_even + spread_p_d1_odd * F::from(2)) * F::from(1 << 96);
 
-        let xor_1 = spread_m_c.clone()
-            + spread_n_c.clone() * F::from(1 << 32)
-            + spread_o_c.clone() * F::from(1 << 64)
-            + spread_p_c.clone() * F::from(1 << 96);
+        //     Vd1 ← (Vd xor Va1) >>> 32
 
-        let xor_2 = spread_m_d.clone()
-            + spread_n_d.clone() * F::from(1 << 32)
-            + spread_o_d.clone() * F::from(1 << 64)
-            + spread_p_d.clone() * F::from(1 << 96);
+        //     addition to get xor in spread form
 
-        let xor = xor_1 + xor_2;
+        //      s_p_a1  |  s_o_a1  |  s_n_a1  |  s_m_a1  |
+        //      s_p_d   |  s_o_d   |  s_n_d   |  s_m_d   |
 
-        let check = spread_witness + (xor * -F::ONE);
+        // after adding the chunks we do rotation
+        // rotating 32 bits dense -> rotating two 32bit chunks in spread form
 
-        // bit rotation
-        let rot = spread_o_c.clone() + spread_p_d.clone()
-            + (spread_p_c.clone() + spread_p_d.clone())* F::from(1 << 32)
-            + (spread_m_c.clone() + spread_m_d.clone())* F::from(1 << 64)
-            + (spread_n_c.clone() + spread_n_d.clone())* F::from(1 << 96);
+        //  s_n_a1 + s_n_d  |  s_m_a1 + s_m_d |  s_p_a1 + s_p_d  |  s_o_a1 + s_o_d  |
+
+        let rot = spread_o_a1.clone() + spread_o_d.clone()
+            + (spread_p_a1.clone() + spread_p_d.clone())* F::from(1 << 32)
+            + (spread_m_a1.clone() + spread_m_d.clone())* F::from(1 << 64)
+            + (spread_n_a1.clone() + spread_n_d.clone())* F::from(1 << 96);
+
+
+        let check = spread_witness + (rot * -F::ONE);
 
         Some(("spread_d1", s_spread_d1 * check))
 
@@ -262,30 +283,30 @@ impl<F: PrimeField> CompressionGate<F> {
 // Third gate addition modulo:  Vc ← Vc + Vd   no input
 // i.e Vc1 = Vc +Vd1
 #[allow(clippy::too_many_arguments)]
-pub fn s_spread_c1(
-    s_spread_c1: Expression<F>,
-    spread_m_c1: Expression<F>,
-    spread_n_c1: Expression<F>,
-    spread_o_c1: Expression<F>,
-    spread_p_c1: Expression<F>,
-    spread_m_c: Expression<F>,
-    spread_n_c: Expression<F>,
-    spread_o_c: Expression<F>,
-    spread_p_c: Expression<F>,
-    spread_m_d1: Expression<F>,
-    spread_n_d1: Expression<F>,
-    spread_o_d1: Expression<F>,
-    spread_p_d1: Expression<F>,        
+pub fn s_vector_c1(
+    s_vector_c1: Expression<F>,
+    vector_m_c1: Expression<F>,
+    vector_n_c1: Expression<F>,
+    vector_o_c1: Expression<F>,
+    vector_p_c1: Expression<F>,
+    vector_m_c: Expression<F>,
+    vector_n_c: Expression<F>,
+    vector_o_c: Expression<F>,
+    vector_p_c: Expression<F>,
+    vector_m_d1: Expression<F>,
+    vector_n_d1: Expression<F>,
+    vector_o_d1: Expression<F>,
+    vector_p_d1: Expression<F>,        
 ) -> Option<(&'static str, Expression<F>)> {
-    let spread_c = spread_m_c + spread_n_c * F::from(1 << 32) + spread_o_c * F::from(1 << 64) + spread_p_c * F::from(1 << 96);
-    let spread_d1 = spread_m_d1 + spread_n_d1 * F::from(1 << 32) + spread_o_d1 * F::from(1 << 64) + spread_p_d1 * F::from(1 << 96);
-    let spread_sum = spread_c + spread_d1;
+    let vector_c = vector_m_c + vector_n_c * F::from(1 << 32) + vector_o_c * F::from(1 << 64) + vector_p_c * F::from(1 << 96);
+    let vector_d1 = vector_m_d1 + vector_n_d1 * F::from(1 << 32) + vector_o_d1 * F::from(1 << 64) + vector_p_d1 * F::from(1 << 96);
+    let vector_sum = vector_c + vector_d1;
 
-    let spread_c1 = spread_m_c1 + spread_n_c1 * F::from(1 << 32) + spread_o_c1 * F::from(1 << 64) + spread_p_c1 * F::from(1 << 96);
+    let vector_c1 = vector_m_c1 + vector_n_c1 * F::from(1 << 32) + vector_o_c1 * F::from(1 << 64) + vector_p_c1 * F::from(1 << 96);
 
-    let check = spread_sum - spread_c1;
+    let check = vector_sum - vector_c1;
 
-    Some(("spread_c1", s_spread_c1 * (spread_sum - spread_c1)))
+    Some(("vector_c1", s_vector_c1 * (vector_sum - vector_c1)))
 }
 
 // check if put spread_m_b2_lo_even
@@ -320,31 +341,16 @@ pub fn s_spread_c1(
             + (spread_o_b1_even + spread_o_b1_odd * F::from(2)) * F::from(1 << 64)
             + (spread_p_b1_even + spread_p_b1_odd * F::from(2)) * F::from(1 << 64);
 
-        let xor_1 = spread_m_c1.clone()
-            + spread_n_lo_c1.clone() * F::from(1 << 32)
-            + spread_n_hi_c1.clone() * F::from(1 << 48)
-            + spread_o_c1.clone() * F::from(1 << 64)
-            + spread_p_c1.clone() * F::from(1 << 96);
-
-        let xor_2 = spread_m_b.clone()
-            + spread_n_lo_b.clone() * F::from(1 << 32)
-            + spread_n_hi_b.clone() * F::from(1 << 48)
-            + spread_o_b.clone() * F::from(1 << 64)
-            + spread_p_b.clone() * F::from(1 << 96);
-
-        let xor = xor_1 + xor_2;
-
-        let check = spread_witness + (xor * -F::ONE);
-
         // bit rotation
         let rot = spread_n_hi_c1.clone() + spread_n_hi_b.clone()
             + (spread_o_c1.clone() + spread_o_b.clone())* F::from(1 << 16)
             + (spread_p_c1.clone() + spread_p_b.clone())* F::from(1 << 48)
             + (spread_m_c1.clone() + spread_m_b.clone())* F::from(1 << 80)
-            + (spread_n_lo_c1.clone() + spread_n_lo_b.clone())* F::from(1 << 112) ;
+            + (spread_n_lo_c1.clone() + spread_n_lo_b.clone())* F::from(1 << 112);
+
+        let check = spread_witness + (rot * -F::ONE);
 
         Some(("spread_b1", s_spread_b1 * check))
-
     }
 
  
@@ -411,25 +417,16 @@ pub fn s_spread_d2(
         + (spread_o_d2_even + spread_o_d2_odd * F::from(2)) * F::from(1 << 64)
         + (spread_p_d2_even + spread_p_d2_odd * F::from(2)) * F::from(1 << 128);
 
-    let xor_1 = spread_m_a2.clone()
-        + spread_n_a2.clone() * F::from(1 << 32)
-        + spread_o_a2.clone() * F::from(1 << 64)
-        + spread_p_a2.clone() * F::from(1 << 96);
-
-    let xor_2 = spread_m_d1.clone()
-        + spread_n_d1.clone() * F::from(1 << 32)
-        + spread_o_d1.clone() * F::from(1 << 64)
-        + spread_p_d1.clone() * F::from(1 << 96);
-
-    let xor = xor_1 + xor_2;
-
-    let check = spread_witness + (xor * -F::ONE);
 
     // bit rotation
     let rot = spread_n_a2.clone() + spread_n_d1.clone()
         + (spread_o_a2.clone() + spread_o_d1.clone())* F::from(1 << 32)
         + (spread_p_a2.clone() + spread_p_d1.clone())* F::from(1 << 64)
         + (spread_m_a2.clone() + spread_m_d1.clone())* F::from(1 << 96);
+
+    
+    let check = spread_witness + (rot * -F::ONE);
+
 
     Some(("spread_d2", s_spread_d2 * check))
 
@@ -465,7 +462,7 @@ pub fn s_spread_c2(
     Some(("spread_c2", s_spread_c2 * (spread_sum - spread_c2)))
 }
 
-// check if put spread_m_b2_lo_even
+// 1+15+16+16+16
 // Eight gate: Vb2 ← (Vb1 xor Vc2) >>> 63
 // vector_b1 on abcd words
 #[allow(clippy::too_many_arguments)]
@@ -479,16 +476,16 @@ pub fn s_spread_c2(
         spread_o_b2_odd: Expression<F>,
         spread_p_b2_even: Expression<F>,
         spread_p_b2_odd: Expression<F>,
+        spread_m_c2: Expression<F>,
         spread_n_c2: Expression<F>,
-        spread_m_lo_c2: Expression<F>,
-        spread_m_hi_c2: Expression<F>,
         spread_o_c2: Expression<F>,
-        spread_p_c2: Expression<F>,
+        spread_p_lo_c2: Expression<F>,
+        spread_p_hi_c2: Expression<F>,
+        spread_m_b1: Expression<F>,
         spread_n_b1: Expression<F>,
-        spread_m_lo_b1: Expression<F>,
-        spread_m_hi_b1: Expression<F>,
         spread_o_b1: Expression<F>,
-        spread_p_b1: Expression<F>,
+        spread_p_lo_b1: Expression<F>,
+        spread_p_hi_b1: Expression<F>,
     ) -> Option<(&'static str, Expression<F>)> {
 
         let spread_witness = 
@@ -497,28 +494,17 @@ pub fn s_spread_c2(
             + (spread_o_b2_even + spread_o_b2_odd * F::from(2)) * F::from(1 << 64)
             + (spread_p_b2_even + spread_p_b2_odd * F::from(2)) * F::from(1 << 128);
 
-        let xor_1 = spread_m_lo_c2.clone()
-            + spread_m_hi_c2.clone() * F::from(1 << 2)
-            + spread_n_c2.clone() * F::from(1 << 32)
-            + spread_o_c2.clone() * F::from(1 << 64)
-            + spread_p_c2.clone() * F::from(1 << 96);
-
-        let xor_2 = spread_m_lo_b1.clone()
-            + spread_m_hi_b1.clone() * F::from(1 << 2)
-            + spread_n_b1.clone() * F::from(1 << 32)
-            + spread_o_b1.clone() * F::from(1 << 64)
-            + spread_p_b1.clone() * F::from(1 << 96);
-
-        let xor = xor_1 + xor_2;
-
-        let check = spread_witness + (xor * -F::ONE);
 
         // bit rotation
-        let rot = spread_m_hi_c2.clone() + spread_m_hi_b1.clone()
-            + (spread_n_c2.clone() + spread_n_b1.clone())* F::from(1 << 16)
-            + (spread_o_c2.clone() + spread_o_b1.clone())* F::from(1 << 48)
-            + (spread_p_c2.clone() + spread_p_b1.clone())* F::from(1 << 80)
-            + (spread_m_lo_c2.clone() + spread_m_lo_b1.clone())* F::from(1 << 112) ;
+        let rot = spread_p_hi_c2.clone() + spread_p_hi_b1.clone()
+            + (spread_m_c2.clone() + spread_m_b1.clone())* F::from(1 << 2)
+            + (spread_n_c2.clone() + spread_n_b1.clone())* F::from(1 << 34)
+            + (spread_o_c2.clone() + spread_o_b1.clone())* F::from(1 << 66)
+            + (spread_p_lo_c2.clone() + spread_p_lo_b1.clone())* F::from(1 << 98);
+
+
+        let check = spread_witness + (rot * -F::ONE);
+
 
         Some(("spread_b2", s_spread_b2 * check))
 
@@ -556,7 +542,6 @@ pub fn s_digest(
     )
 }
 
-
-
 }
+
 

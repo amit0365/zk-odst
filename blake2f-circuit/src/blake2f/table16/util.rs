@@ -1,4 +1,4 @@
-
+// todo fix islesp and lebs2ip 128 bits or 64bits
 
 use group::ff::{Field, PrimeField};
 
@@ -45,11 +45,11 @@ pub fn i2lebsp<const NUM_BITS: usize>(int: u128) -> [bool; NUM_BITS] {
 
 /// Returns the integer representation of a little-endian bit-array.
 /// Panics if the number of bits exceeds 64.
-pub fn lebs2ip<const K: usize>(bits: &[bool; K]) -> u128 {
-    assert!(K <= 128);
+pub fn lebs2ip<const K: usize>(bits: &[bool; K]) -> u64 {
+    assert!(K <= 64);
     bits.iter()
         .enumerate()
-        .fold(0u128, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
+        .fold(0u64, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
 }
 
 /// Helper function that interleaves a little-endian bit-array with zeros
@@ -109,20 +109,29 @@ pub fn odd_bits<const LEN: usize, const HALF: usize>(bits: [bool; LEN]) -> [bool
     odd_bits
 }
 
-/// Given a vector of words as vec![(lo: u16, hi: u16)], returns their sum: u32, along
+/// todo check converted carry to 64bits - change the carry implementation elsewhere
+/// Given a vector of words as vec![(lo: u16, mo: u16, el: u16, hi: u16)], returns their sum: u64, along
 /// with a carry bit.
-pub fn sum_with_carry(words: Vec<(Value<u16>, Value<u16>)>) -> (Value<u32>, Value<u64>) {
-    let words_lo: Value<Vec<u64>> = words.iter().map(|(lo, _)| lo.map(|lo| lo as u64)).collect();
-    let words_hi: Value<Vec<u64>> = words.iter().map(|(_, hi)| hi.map(|hi| hi as u64)).collect();
+pub fn sum_with_carry(words: Vec<(Value<u16>, Value<u16>,Value<u16>, Value<u16>)>) -> (Value<u64>, Value<u64>) {
+    let words_lo: Value<Vec<u128>> = words.iter().map(|(lo, _,_,_)| lo.map(|lo| lo as u128)).collect();
+    let words_mo: Value<Vec<u128>> = words.iter().map(|(_, mo,_,_)| mo.map(|mo| mo as u128)).collect();
+    let words_el: Value<Vec<u128>> = words.iter().map(|(_, _,el,_)| el.map(|el| el as u128)).collect();
+    let words_hi: Value<Vec<u128>> = words.iter().map(|(_,_,_, hi)| hi.map(|hi| hi as u128)).collect();
 
-    let sum: Value<u64> = {
-        let sum_lo: Value<u64> = words_lo.map(|vec| vec.iter().sum());
-        let sum_hi: Value<u64> = words_hi.map(|vec| vec.iter().sum());
-        sum_lo.zip(sum_hi).map(|(lo, hi)| lo + (1 << 16) * hi)
+    let sum: Value<u128> = {
+        let sum_lo: Value<u128> = words_lo.map(|vec| vec.iter().sum());
+        let sum_mo: Value<u128> = words_mo.map(|vec| vec.iter().sum());
+        let sum_el: Value<u128> = words_el.map(|vec| vec.iter().sum());
+        let sum_hi: Value<u128> = words_hi.map(|vec| vec.iter().sum());
+        sum_lo
+        .zip(sum_mo)
+        .zip(sum_el)
+        .zip(sum_hi)
+        .map(|(((lo,mo),el), hi)| lo + (1 << 16) * mo + (1 << 32) * el + (1 << 64) * hi)
     };
 
-    let carry = sum.map(|sum| sum >> 32);
-    let sum = sum.map(|sum| sum as u32);
+    let carry = sum.map(|sum| (sum >> 64) as u64);
+    let sum = sum.map(|sum| sum as u64);
 
     (sum, carry)
 }
