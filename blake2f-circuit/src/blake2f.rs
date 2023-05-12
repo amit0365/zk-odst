@@ -7,7 +7,7 @@
  pub mod table16;
  //pub mod xor;
 
-/* 
+ 
  use group::ff::{Field, PrimeField};
  use std::{cmp::min, marker::PhantomData};
  use std::convert::TryInto;
@@ -305,4 +305,3 @@ impl<F: Field, Blake2fChip: Blake2fInstructions<F>> Blake2f<F, Blake2fChip> {
 //  }
 
 
-*/

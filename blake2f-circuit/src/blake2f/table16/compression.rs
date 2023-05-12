@@ -1,7 +1,7 @@
 //todo fix xor gates rotation gates and word lo,mo,el,hi
 
 pub mod compression_gate;
-//pub mod subregion_initial;
+pub mod subregion_initial;
 pub mod compression_util;
 
 
